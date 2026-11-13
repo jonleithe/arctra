@@ -12,6 +12,24 @@ target_compile_definitions(
 arctra_set_project_warnings(arctra_cpf_test)
 add_test(NAME cpf_parser COMMAND arctra_cpf_test)
 
+add_executable(arctra_cpf_acquisition_test cpf_acquisition_test.cpp)
+target_link_libraries(arctra_cpf_acquisition_test PRIVATE arctra::core)
+target_compile_definitions(
+    arctra_cpf_acquisition_test
+    PRIVATE ARCTRA_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+arctra_set_project_warnings(arctra_cpf_acquisition_test)
+add_test(NAME cpf_acquisition_header COMMAND arctra_cpf_acquisition_test)
+
+add_executable(arctra_satellite_file_test satellite_file_test.cpp)
+target_link_libraries(arctra_satellite_file_test PRIVATE arctra::core)
+target_compile_definitions(
+    arctra_satellite_file_test
+    PRIVATE ARCTRA_TEST_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+arctra_set_project_warnings(arctra_satellite_file_test)
+add_test(NAME satellite_file COMMAND arctra_satellite_file_test)
+
 add_executable(arctra_coordinates_test coordinates_test.cpp)
 target_link_libraries(arctra_coordinates_test PRIVATE arctra::core)
 arctra_set_project_warnings(arctra_coordinates_test)

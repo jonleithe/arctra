@@ -6,11 +6,18 @@
 namespace arctra {
 
 struct GeodeticPosition {
+    // Geodetic, rather than geocentric, latitude in decimal degrees.
     double latitude_deg;
+    // Longitude east of Greenwich in decimal degrees.
     double longitude_deg;
+    // Height above the WGS 84 reference ellipsoid, in metres; it is not an
+    // orthometric height above the geoid.
     double ellipsoidal_height_m;
 };
 
+// Immutable observing-site configuration used by coordinate and pass-search
+// routines. Frame realization and coordinate epoch remain configuration
+// provenance outside this minimal data model.
 class Observatory {
 public:
     Observatory(std::string name,

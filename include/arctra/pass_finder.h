@@ -8,6 +8,9 @@
 
 namespace arctra {
 
+// Find all portions of the requested interval at or above the observatory's
+// elevation threshold. Results retain partial passes at interval boundaries.
+// The ephemeris must cover the complete interval; no extrapolation is done.
 [[nodiscard]] PredictionTable find_passes(
     const CpfEphemeris& ephemeris,
     const Satellite& satellite,

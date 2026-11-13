@@ -39,6 +39,28 @@ separated by commas. Current CPF files are cached below `.arctra-cache/cpf/`.
 If EDC is temporarily unavailable, an existing cached file may be used, but it
 must still cover the complete requested interval.
 
+For a repeatable target selection, use `--sat-file FILE`. The file contains one
+currently supported satellite key or display name per line; blank lines and
+lines beginning with `#` are ignored. It may be combined with `--satellite`.
+
+```text
+# targets.txt
+lageos1
+LARES-2
+etalon1
+```
+
+```bash
+./build/release/arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h
+```
+
+An example selection is provided in `examples/standard-slr-targets.txt`.
+
+The current EDC active-satellite catalog is captured in
+[`docs/edc-active-satellite-catalog.md`](docs/edc-active-satellite-catalog.md).
+It is a reference catalog: only the smaller set in `src/satellite.cpp` is
+currently selectable by the CLI.
+
 The observatory file uses decimal degrees and ellipsoidal height in metres:
 
 ```ini

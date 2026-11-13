@@ -1,0 +1,5 @@
+# Core passive geodetic targets for a standard validation run.
+
+lageos1
+LARES-2
+ etalon1

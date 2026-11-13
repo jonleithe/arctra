@@ -7,10 +7,13 @@
 
 namespace arctra {
 
-// Converts geodetic coordinates using the WGS 84 reference ellipsoid.
+// Converts latitude, longitude, and ellipsoidal height to Cartesian ECEF
+// metres using the WGS 84 reference ellipsoid.
 [[nodiscard]] EarthFixedPosition geodetic_to_ecef(const GeodeticPosition& position);
 
-// Both positions must be expressed in the same Earth-fixed reference frame.
+// Forms satellite minus observer in ECEF, rotates that vector into the local
+// east-north-up frame, and derives geometric look angles. Both positions must
+// refer to the same Earth-fixed reference frame and coordinate epoch.
 [[nodiscard]] LookAngle topocentric_look_angle(
     const GeodeticPosition& observer,
     const EarthFixedPosition& satellite);

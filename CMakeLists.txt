@@ -23,6 +23,7 @@ add_library(
     src/observatory_file.cpp
     src/pass_finder.cpp
     src/satellite.cpp
+    src/satellite_file.cpp
 )
 target_link_libraries(arctra_core PRIVATE CURL::libcurl)
 add_library(arctra::core ALIAS arctra_core)

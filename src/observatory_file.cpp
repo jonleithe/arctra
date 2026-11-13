@@ -11,6 +11,7 @@
 namespace arctra {
 namespace {
 std::string trim(std::string_view value) {
+    // Work on views while stripping whitespace; allocate only the final value.
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
         value.remove_prefix(1);
     }
@@ -25,6 +26,8 @@ double parse_number(const std::string& value, const std::string_view key,
     std::size_t consumed{};
     try {
         const double result = std::stod(value, &consumed);
+        // stod accepts a valid numeric prefix, so reject trailing unit strings
+        // or accidental punctuation instead of silently accepting them.
         if (consumed != value.size()) {
             throw std::invalid_argument{"trailing characters"};
         }
@@ -46,12 +49,16 @@ Observatory load_observatory_ini(const std::filesystem::path& path) {
     bool in_section = false;
     std::string line;
     std::size_t line_number{};
+    // Deliberately support a small, explicit INI subset rather than silently
+    // accepting arbitrary configuration. This keeps station units obvious.
     while (std::getline(input, line)) {
         ++line_number;
         const auto content = trim(line);
         if (content.empty() || content.front() == '#' || content.front() == ';') {
             continue;
         }
+        // Ignore unrelated sections, but only interpret keys while inside the
+        // exact [observatory] section.
         if (content.front() == '[' && content.back() == ']') {
             in_section = trim(std::string_view{content}.substr(1, content.size() - 2)) == "observatory";
             continue;
@@ -72,6 +79,7 @@ Observatory load_observatory_ini(const std::filesystem::path& path) {
         else if (key == "min-elevation") minimum_elevation = parse_number(value, key, line_number);
         else throw std::runtime_error("unknown observatory key '" + key + "' on line " + std::to_string(line_number));
     }
+    // Reject incomplete configuration before the numerical geometry begins.
     if (name.empty() || !latitude || !longitude || !height || !minimum_elevation) {
         throw std::runtime_error("observatory file requires name, lat, lon, height and min-elevation");
     }

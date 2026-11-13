@@ -12,6 +12,8 @@ namespace {
 LookAngle look_at(const CpfEphemeris& ephemeris,
                   const Observatory& observatory,
                   const UtcTime time) {
+    // Centralize the two-step evaluation so the scan and both refinement
+    // methods use exactly the same interpolation and ENU conventions.
     return topocentric_look_angle(observatory.position(), ephemeris.interpolate(time));
 }
 
@@ -21,9 +23,13 @@ UtcTime refine_crossing(const CpfEphemeris& ephemeris,
                         UtcTime upper,
                         const bool rising) {
     const double threshold = observatory.minimum_elevation_deg();
+    // The initial bracket has opposite threshold states. Bisection preserves
+    // that bracket and is robust even when elevation is not locally linear.
     while (upper - lower > std::chrono::milliseconds{10}) {
         const auto middle = lower + (upper - lower) / 2;
         const bool above = look_at(ephemeris, observatory, middle).elevation_deg >= threshold;
+        // For a rise, the upper endpoint is above threshold; for a set, the
+        // lower endpoint is above threshold. The comparison handles both.
         if (above == rising) upper = middle;
         else lower = middle;
     }
@@ -34,8 +40,9 @@ PassEvent refine_peak(const CpfEphemeris& ephemeris,
                       const Observatory& observatory,
                       UtcTime lower,
                       UtcTime upper) {
-    // Golden-section search is adequate because one visibility pass has one
-    // dominant elevation maximum over this short bracket.
+    // Golden-section search needs only function values and is adequate because
+    // one visibility pass has one dominant elevation maximum over this short
+    // bracket. The 20 ms stop tolerance is much finer than display precision.
     constexpr double ratio = 0.6180339887498948482;
     while (upper - lower > std::chrono::milliseconds{20}) {
         const auto width = upper - lower;
@@ -64,11 +71,15 @@ PredictionTable find_passes(const CpfEphemeris& ephemeris,
         throw std::invalid_argument("prediction duration must be positive");
     }
     const auto end = interval.start + interval.duration;
+    // Check the whole requested span once. This prevents the scanner from
+    // producing partial-looking output by interpolating beyond CPF intent.
     if (interval.start < ephemeris.header().intended_start ||
         end > ephemeris.header().intended_end) {
         throw std::out_of_range("CPF does not cover the complete requested interval");
     }
 
+    // The coarse scan finds brackets; event times and peaks are subsequently
+    // refined, so the 30 s interval is not the reported timing precision.
     constexpr auto scan_step = std::chrono::seconds{30};
     const double threshold = observatory.minimum_elevation_deg();
     PredictionTable passes;
@@ -77,6 +88,8 @@ PredictionTable find_passes(const CpfEphemeris& ephemeris,
     std::optional<PassEvent> aos;
     UtcTime visible_start = interval.start;
 
+    // Track threshold state at consecutive samples. Each false-to-true or
+    // true-to-false pair contributes one AOS or LOS bracket.
     for (auto time = interval.start + scan_step; time <= end; time += scan_step) {
         const bool above = look_at(ephemeris, observatory, time).elevation_deg >= threshold;
         if (!previous_above && above) {
@@ -94,6 +107,8 @@ PredictionTable find_passes(const CpfEphemeris& ephemeris,
         previous_above = above;
     }
 
+    // A duration need not be an exact multiple of the scan step; evaluate the
+    // requested end explicitly so the last partial interval is not lost.
     if (previous_time < end) {
         const bool above = look_at(ephemeris, observatory, end).elevation_deg >= threshold;
         if (!previous_above && above) {
@@ -109,6 +124,8 @@ PredictionTable find_passes(const CpfEphemeris& ephemeris,
         }
         previous_above = above;
     }
+    // Preserve a pass that remains visible at the end as a boundary-intersected
+    // pass, represented by a missing LOS rather than a fabricated event.
     if (previous_above) {
         passes.push_back({satellite, aos,
                           refine_peak(ephemeris, observatory, visible_start, end), std::nullopt});

@@ -14,9 +14,12 @@ int main() {
     using namespace std::chrono_literals;
     const auto satellites = arctra::SatelliteCatalog::all();
     const auto lageos1 = arctra::SatelliteCatalog::find("LAGEOS-1");
-    require(satellites.size() == 6);
+    require(satellites.size() == 11);
     require(lageos1.has_value());
     require(lageos1->norad_catalog_id == 8820);
+    const auto hy2b = arctra::SatelliteCatalog::find("HY-2B");
+    require(hy2b.has_value());
+    require(hy2b->ilrs_satellite_id == 1808101);
     const arctra::Observatory observatory{"Ny-Alesund example", {78.923, 11.923, 50.0}, 10.0};
     require(observatory.minimum_elevation_deg() == 10.0);
     const arctra::PredictionInterval interval{arctra::UtcTime{}, 24h};

@@ -3,17 +3,21 @@
 
 #include "arctra/prediction.h"
 
-namespace arctra {
+namespace arctra{
 
-struct EarthFixedPosition {
+struct EarthFixedPosition
+{
+    // Cartesian metres in the provider's documented terrestrial frame.
     double x_m;
     double y_m;
     double z_m;
 };
 
-// Supplies satellite positions in an Earth-fixed frame. The concrete CPF
-// implementation will own parsing, coverage checks and interpolation policy.
-class EphemerisProvider {
+// Future common interface for sources such as CPF and an independently
+// validated SGP4 path. Implementations own their parsing, coverage checks,
+// frame treatment, and interpolation/propagation policy.
+class EphemerisProvider
+{
 public:
     virtual ~EphemerisProvider() = default;
 

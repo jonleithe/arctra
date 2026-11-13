@@ -1,0 +1,14 @@
+# Current Arctra passive Earth-orbiting targets.
+# One supported satellite key or display name per line.
+
+lageos1
+lageos2
+etalon1
+etalon2
+lares
+lares2
+hy2b
+hy2c
+hy2d
+hy2e
+stella
