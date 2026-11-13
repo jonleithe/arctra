@@ -4,12 +4,14 @@
 #include "arctra/pass_finder.h"
 #include "arctra/satellite.h"
 #include "arctra/satellite_file.h"
+#include "arctra/satellite_selector.h"
 
 #include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <optional>
@@ -24,16 +26,22 @@ struct PredictOptions {
     // Parsed user intent; domain validation of station values occurs when its
     // configuration file is loaded.
     std::vector<arctra::Satellite> satellites;
+    bool select_satellites{};
     std::string observatory_file;
     std::chrono::seconds duration{std::chrono::hours{24}};
 };
 
 void print_usage(std::ostream& output) {
-    output << "Usage:\n  arctra predict (--satellite NAME[,NAME...] | --sat-file FILE) "
+    output << "Usage:\n"
+           << "  arctra satellites list\n"
+           << "  arctra satellites search QUERY\n"
+           << "  arctra predict (--select | --satellite NAME[,NAME...] | --sat-file FILE) "
               "--observatory FILE [--dur HOURS[h]]\n\n"
            << "Example:\n  arctra predict --satellite lageos1,lageos2,etalon1 "
               "--observatory nyal.ini --dur 24h\n"
-           << "  arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h\n";
+           << "  arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h\n"
+           << "  arctra predict --select --observatory nyal.ini --dur 24h\n";
+
 }
 
 std::string_view require_value(const int argc, char* argv[], int& index,
@@ -60,7 +68,8 @@ std::chrono::seconds parse_duration(std::string_view text) {
     return std::chrono::hours{hours};
 }
 
-void add_satellites(std::vector<arctra::Satellite>& result, std::string_view list) {
+void add_satellites(std::vector<arctra::Satellite>& result,
+                    const arctra::SatelliteCatalog& catalog, std::string_view list) {
     // A comma-separated list keeps common multi-target runs shell-friendly.
     while (!list.empty()) {
         const auto separator = list.find(',');
@@ -68,8 +77,8 @@ void add_satellites(std::vector<arctra::Satellite>& result, std::string_view lis
         if (name.empty()) {
             throw std::invalid_argument("satellite list contains an empty name");
         }
-        const auto satellite = arctra::SatelliteCatalog::find(name);
-        if (!satellite) {
+        const auto* satellite = catalog.find(name);
+        if (satellite == nullptr) {
             throw std::invalid_argument("unknown satellite: " + std::string{name});
         }
         result.push_back(*satellite);
@@ -80,16 +89,20 @@ void add_satellites(std::vector<arctra::Satellite>& result, std::string_view lis
     }
 }
 
-PredictOptions parse_predict_options(const int argc, char* argv[]) {
+PredictOptions parse_predict_options(const int argc, char* argv[],
+                                     const arctra::SatelliteCatalog& catalog) {
     PredictOptions options;
     // argv[0] is the program and argv[1] is the required subcommand.
     for (int index = 2; index < argc; ++index) {
         const std::string_view argument = argv[index];
         if (argument == "--satellite") {
-            add_satellites(options.satellites, require_value(argc, argv, index, argument));
+            add_satellites(options.satellites, catalog,
+                           require_value(argc, argv, index, argument));
         } else if (argument == "--sat-file") {
             arctra::append_satellites_from_file(
-                options.satellites, require_value(argc, argv, index, argument));
+                options.satellites, catalog, require_value(argc, argv, index, argument));
+        } else if (argument == "--select") {
+            options.select_satellites = true;
         } else if (argument == "--observatory") {
             options.observatory_file = require_value(argc, argv, index, argument);
         } else if (argument == "--dur") {
@@ -98,8 +111,11 @@ PredictOptions parse_predict_options(const int argc, char* argv[]) {
             throw std::invalid_argument("unknown option: " + std::string{argument});
         }
     }
-    if (options.satellites.empty()) {
-        throw std::invalid_argument("--satellite is required");
+    if (options.select_satellites && !options.satellites.empty()) {
+        throw std::invalid_argument("--select cannot be combined with --satellite or --sat-file");
+    }
+    if (!options.select_satellites && options.satellites.empty()) {
+        throw std::invalid_argument("use --select, --satellite, or --sat-file");
     }
     if (options.observatory_file.empty()) {
         throw std::invalid_argument("--observatory is required");
@@ -134,14 +150,35 @@ int run_predict(const PredictOptions& options)
     const arctra::PredictionInterval interval{start, options.duration};
     arctra::CpfAcquisition acquisition{".arctra-cache/cpf"};
     arctra::PredictionTable all_passes;
+    std::vector<arctra::Satellite> unavailable_satellites;
+    std::size_t predicted_satellite_count{};
 
     for(const auto& satellite : options.satellites){
         // Acquisition validates the CPF header before it reaches the parser
         // used for pass finding; find_passes then enforces coverage.
-        const auto path = acquisition.acquire(satellite);
+        std::filesystem::path path;
+        try {
+            path = acquisition.acquire(satellite);
+        } catch (const arctra::CurrentCpfUnavailable&) {
+            unavailable_satellites.push_back(satellite);
+            continue;
+        }
         const auto ephemeris = arctra::load_cpf(path);
         auto passes = arctra::find_passes(ephemeris, satellite, observatory, interval);
         all_passes.insert(all_passes.end(), passes.begin(), passes.end());
+        ++predicted_satellite_count;
+    }
+
+    if (!unavailable_satellites.empty()) {
+        std::cerr << "Skipped satellites without a current EDC CPF:\n";
+        for (const auto& satellite : unavailable_satellites) {
+            std::cerr << "  - " << satellite.name << " (" << satellite.key << ")\n";
+        }
+        std::cerr << '\n';
+    }
+    if (predicted_satellite_count == 0) {
+        std::cerr << "No selected satellites have current EDC CPF predictions.\n";
+        return EXIT_FAILURE;
     }
     
     // Present interleaved multi-satellite results in chronological order.
@@ -154,14 +191,14 @@ int run_predict(const PredictOptions& options)
               << "   Duration: "
               << std::chrono::duration_cast<std::chrono::hours>(interval.duration).count()
               << " h   Minimum elevation: " << observatory.minimum_elevation_deg() << " deg\n\n"
-              << std::left << std::setw(10) << "Satellite"
+              << std::left << std::setw(13) << "Satellite"
               << std::setw(22) << "AOS (UTC)" << std::setw(22) << "Maximum (UTC)"
               << std::setw(22) << "LOS (UTC)" << std::right << std::setw(9) << "Max El"
               << std::setw(12) << "Range km" << '\n'
-              << std::string(97, '-') << '\n';
+              << std::string(100, '-') << '\n';
     
     for(const auto& pass : all_passes){
-        std::cout << std::left << std::setw(10) << pass.satellite.name
+        std::cout << std::left << std::setw(13) << pass.satellite.name
                   << std::setw(22) << format_event(pass.aos, "< interval start")
                   << std::setw(22) << format_time(pass.culmination.time)
                   << std::setw(22) << format_event(pass.los, "> interval end")
@@ -173,6 +210,41 @@ int run_predict(const PredictOptions& options)
 
     if (all_passes.empty()) std::cout << "No passes above the elevation threshold.\n";
     return EXIT_SUCCESS;
+}
+
+void print_satellites(const std::vector<const arctra::Satellite*>& satellites) {
+    std::cout << std::left << std::setw(20) << "CPF key" << std::setw(22) << "Name"
+              << std::setw(12) << "ILRS ID" << std::setw(12) << "NORAD ID" << "Status\n"
+              << std::string(78, '-') << '\n';
+    for (const auto* satellite : satellites) {
+        std::ostringstream ilrs_id;
+        ilrs_id << std::setfill('0') << std::setw(7) << satellite->ilrs_satellite_id;
+        std::cout << std::left << std::setw(20) << satellite->key
+                  << std::setw(22) << satellite->name << std::setw(12)
+                  << ilrs_id.str();
+        if (satellite->norad_catalog_id) {
+            std::cout << std::setw(12) << *satellite->norad_catalog_id << "CPF candidate\n";
+        } else {
+            std::cout << std::setw(12) << "-" << "catalog only\n";
+        }
+    }
+}
+
+int run_satellites(const int argc, char* argv[], const arctra::SatelliteCatalog& catalog) {
+    if (argc == 3 && std::string_view{argv[2]} == "list") {
+        std::vector<const arctra::Satellite*> satellites;
+        satellites.reserve(catalog.all().size());
+        for (const auto& satellite : catalog.all()) satellites.push_back(&satellite);
+        print_satellites(satellites);
+        return EXIT_SUCCESS;
+    }
+    if (argc == 4 && std::string_view{argv[2]} == "search") {
+        const auto matches = catalog.search(argv[3]);
+        print_satellites(matches);
+        if (matches.empty()) std::cout << "No matching satellites.\n";
+        return EXIT_SUCCESS;
+    }
+    throw std::invalid_argument("expected 'satellites list' or 'satellites search QUERY'");
 }
 }  // namespace
 
@@ -186,11 +258,25 @@ int main(const int argc, char* argv[])
             print_usage(std::cout);
             return EXIT_SUCCESS;
         }
-        if (argc < 2 || std::string_view{argv[1]} != "predict") {
+        if (argc < 2) {
             print_usage(std::cerr);
             return EXIT_FAILURE;
         }
-        return run_predict(parse_predict_options(argc, argv));
+        const auto catalog = arctra::SatelliteCatalog::load_default();
+        if (std::string_view{argv[1]} == "satellites") {
+            return run_satellites(argc, argv, catalog);
+        }
+        if (std::string_view{argv[1]} == "predict") {
+            auto options = parse_predict_options(argc, argv, catalog);
+            if (options.select_satellites) {
+                auto selected = arctra::select_satellites_in_terminal(catalog);
+                if (!selected) return EXIT_SUCCESS;
+                options.satellites = std::move(*selected);
+            }
+            return run_predict(options);
+        }
+        print_usage(std::cerr);
+        return EXIT_FAILURE;
     }
 
     catch(const std::exception& error)

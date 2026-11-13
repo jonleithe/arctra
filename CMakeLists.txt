@@ -24,6 +24,7 @@ add_library(
     src/pass_finder.cpp
     src/satellite.cpp
     src/satellite_file.cpp
+    src/satellite_selector.cpp
 )
 target_link_libraries(arctra_core PRIVATE CURL::libcurl)
 add_library(arctra::core ALIAS arctra_core)
@@ -35,6 +36,10 @@ target_include_directories(
         $<INSTALL_INTERFACE:include>
 )
 target_compile_features(arctra_core PUBLIC cxx_std_20)
+target_compile_definitions(
+    arctra_core
+    PRIVATE ARCTRA_DEFAULT_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data/edc-active-satellites.csv"
+)
 set_target_properties(
     arctra_core
     PROPERTIES

@@ -5,9 +5,17 @@
 
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 namespace arctra {
+
+// A normal catalog/availability condition rather than a transport or data
+// integrity failure. Callers may safely omit this target and continue a batch.
+class CurrentCpfUnavailable : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 // Parse a locally stored CPF and verify that its header identifies the requested
 // target. The CPF parser also enforces the currently supported target class,

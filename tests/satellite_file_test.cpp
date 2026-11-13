@@ -15,8 +15,9 @@ void require(const bool condition) {
 
 int main() {
     std::vector<arctra::Satellite> satellites;
+    const auto catalog = arctra::SatelliteCatalog::load_default();
     arctra::append_satellites_from_file(
-        satellites,
+        satellites, catalog,
         std::filesystem::path{ARCTRA_TEST_FIXTURES} / "satellite_selection.txt");
 
     require(satellites.size() == 3);

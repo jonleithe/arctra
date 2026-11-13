@@ -15,6 +15,7 @@ namespace arctra {
 // Throws an error naming the file and line if it cannot read the file or an
 // entry is not a known satellite.
 void append_satellites_from_file(std::vector<Satellite>& result,
+                                 const SatelliteCatalog& catalog,
                                  const std::filesystem::path& path);
 
 }  // namespace arctra

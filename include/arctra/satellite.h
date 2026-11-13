@@ -1,28 +1,36 @@
 #ifndef ARCTRA_SATELLITE_H
 #define ARCTRA_SATELLITE_H
 
+#include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace arctra {
 
 struct Satellite {
-    // Stable lowercase key used in CPF filenames and command-line lookup.
-    std::string_view key;
-    // Human-readable display name.
-    std::string_view name;
-    int norad_catalog_id;
-    int ilrs_satellite_id;
+    std::string key;
+    std::string name;
+    std::optional<int> norad_catalog_id;
+    int ilrs_satellite_id{};
+
+    [[nodiscard]] bool is_earth_orbiting() const noexcept;
 };
 
 class SatelliteCatalog {
 public:
-    // The initial SLR target list. Algorithms must not depend on this list.
-    [[nodiscard]] static std::span<const Satellite> all() noexcept;
+    [[nodiscard]] static SatelliteCatalog load_default();
+    [[nodiscard]] static SatelliteCatalog load(const std::filesystem::path& path);
 
-    // Lookup is case-insensitive and ignores '-', '_' and ASCII whitespace.
-    [[nodiscard]] static std::optional<Satellite> find(std::string_view name) noexcept;
+    [[nodiscard]] std::span<const Satellite> all() const noexcept;
+    [[nodiscard]] const Satellite* find(std::string_view value) const noexcept;
+    [[nodiscard]] std::vector<const Satellite*> search(std::string_view query) const;
+
+private:
+    explicit SatelliteCatalog(std::vector<Satellite> satellites);
+    std::vector<Satellite> satellites_;
 };
 
 }  // namespace arctra

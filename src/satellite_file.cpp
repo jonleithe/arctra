@@ -22,6 +22,7 @@ std::string_view trim(std::string_view value) {
 }  // namespace
 
 void append_satellites_from_file(std::vector<Satellite>& result,
+                                 const SatelliteCatalog& catalog,
                                  const std::filesystem::path& path) {
     std::ifstream input{path};
     if (!input) {
@@ -37,8 +38,8 @@ void append_satellites_from_file(std::vector<Satellite>& result,
             continue;
         }
 
-        const auto satellite = SatelliteCatalog::find(name);
-        if (!satellite) {
+        const auto* satellite = catalog.find(name);
+        if (satellite == nullptr) {
             throw std::runtime_error("unknown satellite '" + std::string{name} +
                                      "' in " + path.string() + " on line " +
                                      std::to_string(line_number));

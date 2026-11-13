@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <regex>
 #include <stdexcept>
@@ -87,19 +88,25 @@ void validate_cpf_header(const CpfHeader& header, const Satellite& satellite) {
     if (header.format_version != 2) {
         throw std::runtime_error("CPF header is not version 2");
     }
-    if (header.norad_catalog_id != satellite.norad_catalog_id) {
+    if (!satellite.norad_catalog_id || header.norad_catalog_id != *satellite.norad_catalog_id) {
         throw std::runtime_error("CPF NORAD ID does not match requested satellite " +
-                                 std::string{satellite.name});
+                                 satellite.name);
     }
     if (header.ilrs_satellite_id != satellite.ilrs_satellite_id) {
         throw std::runtime_error("CPF ILRS ID does not match requested satellite " +
-                                 std::string{satellite.name});
+                                 satellite.name);
     }
-    const auto named_satellite = SatelliteCatalog::find(header.target_name);
-    if (!named_satellite || named_satellite->key != satellite.key) {
+    std::string normalized_header_name;
+    for (const char character : header.target_name) {
+        const auto byte = static_cast<unsigned char>(character);
+        if (character != '-' && character != '_' && std::isspace(byte) == 0) {
+            normalized_header_name.push_back(static_cast<char>(std::tolower(byte)));
+        }
+    }
+    if (normalized_header_name != satellite.key) {
         throw std::runtime_error("CPF target name '" + header.target_name +
                                  "' does not match requested satellite " +
-                                 std::string{satellite.name});
+                                 satellite.name);
     }
 }
 }  // namespace
@@ -112,10 +119,14 @@ CpfAcquisition::CpfAcquisition(std::filesystem::path cache_directory)
     : cache_directory_(std::move(cache_directory)) {}
 
 std::filesystem::path CpfAcquisition::acquire(const Satellite& satellite) const {
+    if (!satellite.is_earth_orbiting()) {
+        throw std::invalid_argument("satellite '" + satellite.name +
+                                    "' is not an Earth-orbiting CPF target");
+    }
     // Cache first for resilience, but still ask EDC for its current listing so
     // an existing older file does not hide a newly issued prediction.
     std::filesystem::create_directories(cache_directory_);
-    const std::string prefix = std::string{satellite.key} + "_cpf_";
+    const std::string prefix = satellite.key + "_cpf_";
     std::vector<std::string> cached;
     for (const auto& entry : std::filesystem::directory_iterator{cache_directory_}) {
         const auto filename = entry.path().filename().string();
@@ -147,6 +158,10 @@ std::filesystem::path CpfAcquisition::acquire(const Satellite& satellite) const 
     for (std::sregex_iterator match{listing.begin(), listing.end(), link_pattern}, end;
          match != end; ++match) {
         available.push_back(std::filesystem::path{(*match)[1].str()}.filename().string());
+    }
+    if (available.empty()) {
+        throw CurrentCpfUnavailable("EDC has no current CPF for " + satellite.name +
+                                    " (catalog key " + satellite.key + ")");
     }
     const auto filename = select_newest(std::move(available));
     const auto destination = cache_directory_ / filename;

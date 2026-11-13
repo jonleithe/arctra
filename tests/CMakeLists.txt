@@ -30,6 +30,11 @@ target_compile_definitions(
 arctra_set_project_warnings(arctra_satellite_file_test)
 add_test(NAME satellite_file COMMAND arctra_satellite_file_test)
 
+add_executable(arctra_satellite_selector_test satellite_selector_test.cpp)
+target_link_libraries(arctra_satellite_selector_test PRIVATE arctra::core)
+arctra_set_project_warnings(arctra_satellite_selector_test)
+add_test(NAME satellite_selector COMMAND arctra_satellite_selector_test)
+
 add_executable(arctra_coordinates_test coordinates_test.cpp)
 target_link_libraries(arctra_coordinates_test PRIVATE arctra::core)
 arctra_set_project_warnings(arctra_coordinates_test)
@@ -39,3 +44,15 @@ add_executable(arctra_pass_finder_test pass_finder_test.cpp)
 target_link_libraries(arctra_pass_finder_test PRIVATE arctra::core)
 arctra_set_project_warnings(arctra_pass_finder_test)
 add_test(NAME pass_finder COMMAND arctra_pass_finder_test)
+
+add_test(NAME cli_satellite_search COMMAND arctra satellites search lageos)
+set_tests_properties(
+    cli_satellite_search
+    PROPERTIES PASS_REGULAR_EXPRESSION "lageos1.*LAGEOS-1;lageos2.*LAGEOS-2"
+)
+
+add_test(NAME cli_satellite_id_search COMMAND arctra satellites search 8820)
+set_tests_properties(
+    cli_satellite_id_search
+    PROPERTIES PASS_REGULAR_EXPRESSION "lageos1.*8820.*CPF candidate"
+)
