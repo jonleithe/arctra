@@ -87,15 +87,21 @@ Current limitations that must remain visible in user-facing work:
 - The tracker is based on a downloaded CPF and instantaneous geometric
   quantities. It is neither live telemetry nor telescope/laser-control
   software.
-- The displayed one-way and round-trip microseconds are `range / c` and
-  `2 * range / c` in vacuum, not a corrected SLR light-time solution.
+- The tracker displays round-trip microseconds (`us (RT)`) as `2 * range / c`
+  in vacuum, not a corrected SLR light-time solution. Azimuth/elevation use four
+  displayed decimal places; this is display precision, not validated accuracy.
+- Space clears the tracker search after toggling. Countdown searches return
+  the first crossing and stop at the earlier of header intent and final position
+  coverage; they do not extrapolate.
 - Lunar reflectors remain catalog-visible but unsupported by the Earth-orbit
   path. Their CPF use requires transmit/return light-time legs and lunar
   orientation treatment.
 - The current UTC representation cannot preserve a distinct `23:59:60` label;
   do not claim reliable prediction across a leap second.
-- There is no independent operational comparison yet. This is the highest
-  value next validation task when station predictions are available.
+- Initial RATGUI photo comparison is documented in
+  `docs/ratgui-comparison-2026-11-14.md`; the user confirmed RATGUI uses UTC.
+  Exact-epoch independent operational validation remains pending and is the
+  highest-value next validation task.
 - Acquisition has a basic file cache but not yet retry policy or complete cache
   provenance metadata. SGP4/OMM support is not implemented.
 

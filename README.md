@@ -108,20 +108,34 @@ background after the dashboard appears. `--pri` can be combined with
 ./build/release/arctra track --pri --observatory nyal.ini
 ```
 
-Use Space on the highlighted catalog target to start or stop tracking. The
-dashboard shows each selected target's instantaneous geometric azimuth,
-elevation, slant range, and whether elevation is at or above the observatory's
-`min-elevation` threshold.
+Use Space on the highlighted catalog target to start or stop tracking. Space
+also clears the typed search while keeping the cursor on the current target.
+The dashboard shows each selected target's instantaneous geometric azimuth and
+elevation to four decimal places, slant range in kilometres, and whether
+elevation is at or above the observatory's `min-elevation` threshold. Extra
+displayed decimal places do not establish prediction accuracy.
 
 CPF retrieval for a newly selected target happens in the background. It appears
 as `Loading CPF...` (or `Queued CPF...` when another request is already in
 progress) in the live-data pane until its file has been validated.
-It also reports one-way light time (`range / c`) and, for reference, the
-corresponding geometric round-trip time. These are vacuum light times derived
-from instantaneous CPF range, not a corrected or operational SLR timing
-solution. Below the threshold it counts down to the next predicted rise; once
+It also reports round-trip light time (`2 * range / c`), labelled `us (RT)`.
+This is a vacuum light time derived from instantaneous CPF range, not a
+corrected or operational SLR timing solution. Below the threshold it counts
+down to the next predicted rise; once
 above it counts down to the predicted set. Press `q` or Escape to leave the
 dashboard.
+
+The countdown scans forward in 30-second steps and refines the first threshold
+crossing by bisection to a 10 ms bracket. It stops at the earlier of the CPF
+header's intended end and the final position record; it never extrapolates.
+A rise and set entirely between scan samples can be missed. A successful
+search with no event displays `no rise within CPF coverage`; this means no
+crossing was found within coverage, not that the satellite can never rise.
+Currently the same message is also used for targets remaining above threshold.
+`timer unavailable` means the search failed, for example at a data gap or an
+unsupported interpolation epoch. Current look angles can remain available even
+when a future countdown cannot be calculated. No-event results and failures
+are cached for that selection; deselect/reselect to retry.
 
 The live pane puts targets currently at or above the elevation threshold first,
 then below-threshold targets by their next predicted rise. This is a display
@@ -158,3 +172,11 @@ interpolation, the WGS 84 ellipsoid for station conversion, geometric ECEF-to-EN
 look angles, 30-second pass scanning, bisection for threshold crossings, and a
 golden-section search for maximum elevation. It does not extrapolate beyond CPF
 coverage.
+
+## Validation status
+
+The first station photo comparison with NASA RATGUI is recorded in
+[the comparison notes](docs/ratgui-comparison-2026-11-14.md). Both clocks use
+UTC. Preliminary angular agreement is encouraging, but the photographs are
+not synchronized and do not establish operational accuracy. Exact-epoch
+comparison with identified CPF inputs and station configuration remains open.

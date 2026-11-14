@@ -27,13 +27,21 @@ The authoritative implementation is the current `master` branch; begin with
   next rise. `--pri` preselects targets from the editable checked-in
   `priorities.sat` file (resolved from the current directory) and queues them
   after the dashboard opens.
+- Tracker azimuth/elevation display uses four decimal places; light time is
+  round-trip microseconds (`us (RT)`). Space clears the search after toggling.
+- Countdown searches return the first rise/set, stopping at actual position
+  coverage or header intent, whichever ends first. Regression tests cover
+  shortened coverage, no-event results, and a later data gap.
+- Initial NASA RATGUI photo comparison is recorded in
+  `docs/ratgui-comparison-2026-11-14.md`; both displays use UTC. This is
+  preliminary evidence, not completed independent accuracy validation.
 
 ## Important conventions and limits
 
 - All output is instantaneous **geometric** CPF/ECEF-to-ENU information. It is
   not operational laser pointing or control.
-- Live light-time values are vacuum `range / c` (one way) and `2 * range / c`
-  (round trip), not an iterated SLR light-time or range correction.
+- The tracker displays vacuum round-trip light time `2 * range / c`, labelled
+  `us (RT)`, not an iterated SLR light-time or range correction.
 - A valid current CPF is necessary but does not by itself guarantee that a
   target will be visible from the selected station.
 - Lunar reflectors (Apollo, Luna, NGLR) remain in the local catalog but are not
@@ -42,6 +50,10 @@ The authoritative implementation is the current `master` branch; begin with
   must not be relied upon across a leap second.
 - Current cache behavior is intentionally basic. It has no retry strategy and
   does not yet persist full source/retrieval provenance metadata.
+- Countdown scanning can miss a complete visibility interval between its
+  30-second samples. No-event results and failures remain cached until the
+  target is reselected. The requested `no rise within CPF coverage` message
+  currently also covers continuously above-threshold targets.
 - No SGP4/OMM propagation path exists yet.
 
 ## Build and test
@@ -55,7 +67,8 @@ The `dev` preset builds in `build/dev`; `release` builds in `build/release`.
 
 ## Suggested next work
 
-1. Compare several CPF-derived passes with Ny-Ålesund operational predictions.
+1. Follow up the initial RATGUI photos with exact-epoch comparisons of several
+   CPF-derived passes against Ny-Ålesund operational predictions.
    Record exact UTC epochs, observatory configuration, CPF filename/provider,
    azimuth, elevation, range, and AOS/LOS differences. This validation matters
    more than adding another propagation source.

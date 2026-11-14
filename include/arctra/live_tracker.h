@@ -42,9 +42,10 @@ struct LiveCpfTarget {
     const Observatory& observatory,
     UtcTime time);
 
-// Finds the next crossing of the observatory's elevation threshold through the
-// CPF intended interval. A missing result means no such crossing is predicted
-// before coverage ends (for example, a continuously visible target).
+// Finds the first crossing of the observatory's elevation threshold, scanning
+// at 30-second intervals and refining by bisection. Search stops at the earlier
+// of header intent and the final position record; interpolation errors propagate.
+// A missing result means no crossing was found before coverage ends.
 [[nodiscard]] std::optional<NextVisibilityEvent> next_visibility_event(
     const CpfEphemeris& ephemeris,
     const Satellite& satellite,

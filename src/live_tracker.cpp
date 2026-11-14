@@ -2,7 +2,6 @@
 
 #include "arctra/coordinates.h"
 #include "arctra/cpf_acquisition.h"
-#include "arctra/pass_finder.h"
 #include "arctra/satellite_selector.h"
 
 #include <algorithm>
@@ -345,13 +344,13 @@ void render(const SatelliteSelectionModel& model,
             std::ostringstream data;
             data << std::left << std::setw(18) << clipped(targets[index].satellite.name, 17)
                  << std::setw(12) << (sample.above_minimum_elevation ? "ABOVE" : "below")
-                 << std::right << std::fixed << std::setprecision(1)
-                 << " Az " << std::setw(6) << sample.look.azimuth_deg << " deg"
-                 << "  El " << std::setw(6) << sample.look.elevation_deg << " deg"
+                 << std::right << std::fixed << std::setprecision(4)
+                 << " Az " << std::setw(8) << sample.look.azimuth_deg << " deg"
+                 << "  El " << std::setw(8) << sample.look.elevation_deg << " deg"
                  << "  " << std::setprecision(0) << std::setw(8)
                  << sample.look.slant_range_m / 1000.0 << " km"
                  << "  " << std::setprecision(1) << std::setw(10)
-                 << sample.one_way_light_time_us << " us (1w)";
+                 << sample.round_trip_light_time_us << " us (RT)";
             const auto& timer = timers[index];
             if (timer.event) {
                 data << "  "
@@ -360,7 +359,7 @@ void render(const SatelliteSelectionModel& model,
                              : "sets in ")
                      << format_countdown(time, timer.event->time);
             } else if (timer.error.empty()) {
-                data << "  no threshold crossing in CPF";
+                data << "  no rise within CPF coverage";
             } else {
                 data << "  timer unavailable";
             }
@@ -395,20 +394,36 @@ std::optional<NextVisibilityEvent> next_visibility_event(const CpfEphemeris& eph
     if (time < ephemeris.header().intended_start || time >= ephemeris.header().intended_end) {
         throw std::out_of_range("current time is outside CPF intended interval");
     }
-    const auto remaining = ephemeris.header().intended_end - time;
-    const auto duration = std::chrono::duration_cast<std::chrono::seconds>(remaining);
-    if (duration <= std::chrono::seconds::zero()) return std::nullopt;
-    const auto passes = find_passes(ephemeris, satellite, observatory, {time, duration});
-    if (passes.empty()) return std::nullopt;
-
-    const auto current = evaluate_live_track(ephemeris, satellite, observatory, time);
-    const auto& first = passes.front();
-    if (current.above_minimum_elevation) {
-        if (!first.los) return std::nullopt;
-        return NextVisibilityEvent{VisibilityEventKind::sets_below_threshold, first.los->time};
+    // Header intent can extend beyond the supplied position records. Search
+    // only supported epochs, and return the first crossing before inspecting
+    // later data (which may contain an unrelated gap).
+    const auto& positions = ephemeris.positions();
+    if (positions.empty()) throw std::runtime_error("CPF contains no position records");
+    const auto end = std::min(ephemeris.header().intended_end, positions.back().epoch);
+    const auto above_at = [&](const UtcTime epoch) {
+        return evaluate_live_track(ephemeris, satellite, observatory, epoch)
+            .above_minimum_elevation;
+    };
+    auto previous_time = time;
+    const bool initially_above = above_at(time);
+    while (previous_time < end) {
+        const auto next = std::min(previous_time + std::chrono::seconds{30}, end);
+        if (above_at(next) != initially_above) {
+            auto lower = previous_time;
+            auto upper = next;
+            while (upper - lower > std::chrono::milliseconds{10}) {
+                const auto middle = lower + (upper - lower) / 2;
+                if (above_at(middle) == initially_above) lower = middle;
+                else upper = middle;
+            }
+            return NextVisibilityEvent{
+                initially_above ? VisibilityEventKind::sets_below_threshold
+                                : VisibilityEventKind::rises_above_threshold,
+                lower + (upper - lower) / 2};
+        }
+        previous_time = next;
     }
-    if (!first.aos) return std::nullopt;
-    return NextVisibilityEvent{VisibilityEventKind::rises_above_threshold, first.aos->time};
+    return std::nullopt;
 }
 
 void run_live_tracker(const SatelliteCatalog& catalog,
@@ -530,6 +545,7 @@ void run_live_tracker(const SatelliteCatalog& catalog,
                 pending_loads.push_back({satellite, false});
                 start_next_load();
             }
+            model.clear_query();
         } else if (input.key == Key::character &&
                    std::isprint(static_cast<unsigned char>(input.character)) != 0) {
             model.set_query(model.query() + input.character);

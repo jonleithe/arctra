@@ -84,7 +84,7 @@ flowchart TD
 
     C --> M[Each second: interpolate CPF at UTC now]
     M --> N[Convert ECEF position to ENU look angle]
-    N --> O[Display azimuth, elevation, range and range/c]
+    N --> O[Display azimuth, elevation, range and round-trip 2 * range/c]
     O --> P{Above minimum elevation?}
     P -- yes --> Q[Show ABOVE and countdown to predicted set]
     P -- no --> R[Show below and countdown to predicted rise]
@@ -93,8 +93,16 @@ flowchart TD
     S --> C
 ```
 
-The next threshold event is found with the same CPF pass-search/refinement
-logic as `predict`, then cached until it occurs. The display refresh is live;
+The next threshold event is found with a 30-second scan and bisection, returning
+at the first crossing and stopping at the earlier of the CPF intended end and
+the final position record. Crossings are refined to a 10 ms bracket. A complete
+rise/set interval between scan samples can be missed. Events are cached until
+they occur; no-event results and failures persist until reselection. A successful
+search without an event displays `no rise within CPF coverage` (also currently
+used for continuously above-threshold targets). An exception produces
+`timer unavailable`, independently of the current look-angle calculation.
+Space clears the typed search after toggling, preserving the cursor.
+The display refresh is live;
 the ephemeris is the downloaded CPF, not real-time spacecraft telemetry.
 
 ## Deliberate limits
@@ -105,7 +113,7 @@ the ephemeris is the downloaded CPF, not real-time spacecraft telemetry.
 - The output omits light-time iteration, atmosphere/refraction, station
   displacement, instrument calibration, safety interlocks, and any control
   interface.
-- Live-track microseconds are geometric vacuum range divided by the speed of
-  light. They are not corrected one-way or two-way SLR timing.
+- Live-track microseconds are twice the geometric vacuum range divided by the
+  speed of light, labelled `us (RT)`. They are not corrected SLR timing.
 - The current UTC representation cannot preserve a distinct leap-second label;
   do not use this implementation to predict across a leap second.
