@@ -118,7 +118,7 @@ void validate_cpf_file(const std::filesystem::path& path, const Satellite& satel
 CpfAcquisition::CpfAcquisition(std::filesystem::path cache_directory)
     : cache_directory_(std::move(cache_directory)) {}
 
-std::filesystem::path CpfAcquisition::acquire(const Satellite& satellite) const {
+std::filesystem::path CpfAcquisition::acquire(const Satellite& satellite, const bool allow_cached_fallback) const {
     if (!satellite.is_earth_orbiting()) {
         throw std::invalid_argument("satellite '" + satellite.name +
                                     "' is not an Earth-orbiting CPF target");
@@ -143,7 +143,7 @@ std::filesystem::path CpfAcquisition::acquire(const Satellite& satellite) const 
         // Offline use is intentional, but a cached file is subject to the same
         // header validation as a newly downloaded one. Coverage is checked by
         // the pass finder against the requested interval.
-        if (!cached.empty()) {
+        if (allow_cached_fallback && !cached.empty()) {
             const auto cached_path = cache_directory_ / select_newest(std::move(cached));
             validate_cpf_file(cached_path, satellite);
             return cached_path;

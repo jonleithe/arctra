@@ -27,8 +27,17 @@ The authoritative implementation is the current `master` branch; begin with
   next rise. `--pri` preselects targets from the editable checked-in
   `priorities.sat` file (resolved from the current directory) and queues them
   after the dashboard opens.
+- Selected targets check EDC hourly or 30 minutes before usable coverage ends.
+  Near expiry and after failures, retries use a five-minute interval through
+  the existing background queue. Valid replacements reset countdowns; old data
+  stays loaded during failures and is never extrapolated after expiry. The
+  focused-target footer reports expiry/check status.
+- Tab switches catalog/live focus with an arrow; the live pane highlights
+  its current target row instead of the header.
+  Each pane scrolls independently; the live header reports its visible range,
+  including queued/failed loads. Search and Space are catalog-only.
 - Tracker azimuth/elevation display uses four decimal places; light time is
-  round-trip microseconds (`us (RT)`). Space clears the search after toggling.
+  round-trip microseconds (`μs (RT)`). Space clears the search after toggling.
 - Countdown searches return the first rise/set, stopping at actual position
   coverage or header intent, whichever ends first. Regression tests cover
   shortened coverage, no-event results, and a later data gap.
@@ -41,7 +50,7 @@ The authoritative implementation is the current `master` branch; begin with
 - All output is instantaneous **geometric** CPF/ECEF-to-ENU information. It is
   not operational laser pointing or control.
 - The tracker displays vacuum round-trip light time `2 * range / c`, labelled
-  `us (RT)`, not an iterated SLR light-time or range correction.
+  `μs (RT)`, not an iterated SLR light-time or range correction.
 - A valid current CPF is necessary but does not by itself guarantee that a
   target will be visible from the selected station.
 - Lunar reflectors (Apollo, Luna, NGLR) remain in the local catalog but are not
@@ -49,10 +58,11 @@ The authoritative implementation is the current `master` branch; begin with
 - CPF time labels are stored in a POSIX-style `sys_time`; the implementation
   must not be relied upon across a leap second.
 - Current cache behavior is intentionally basic. It has no retry strategy and
-  does not yet persist full source/retrieval provenance metadata.
+  does not yet persist full source/retrieval provenance metadata. Tracker
+  refresh retries are session-local; general acquisition has no retry policy.
 - Countdown scanning can miss a complete visibility interval between its
   30-second samples. No-event results and failures remain cached until the
-  target is reselected. The requested `no rise within CPF coverage` message
+  CPF is replaced or the target is reselected. The requested `no rise within CPF coverage` message
   currently also covers continuously above-threshold targets.
 - No SGP4/OMM propagation path exists yet.
 
@@ -82,3 +92,10 @@ The `dev` preset builds in `build/dev`; `release` builds in `build/release`.
 
 See `docs/software-flow.md` for the algorithm/data paths and `AGENTS.md` for
 development constraints and the longer roadmap.
+
+Visibility and prediction health have separate coloured labels: green `ABOVE`
+and grey `below` refer to the configured minimum-elevation threshold. CPF status
+is green `CPF OK` with no expiry countdown, yellow `CPF EXPIRING hh:mm:ss` within
+30 minutes of usable expiry, and red `CPF EXPIRED` at expiry. Hours can exceed
+24. Unavailable positions show `UNKNOWN` and omit current angles and range.
+Status colour resets preserve the active row's reverse-video highlight.

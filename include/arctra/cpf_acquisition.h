@@ -28,8 +28,8 @@ public:
 
     // Returns the newest current EDC CPF, downloading it only when absent. Both
     // downloaded and cached files are parsed and their headers are validated
-    // before a path is returned.
-    [[nodiscard]] std::filesystem::path acquire(const Satellite& satellite) const;
+    // before a path is returned. Disable cached fallback to detect online failures.
+    [[nodiscard]] std::filesystem::path acquire(const Satellite& satellite, bool allow_cached_fallback = true) const;
 
 private:
     // Cache is deliberately local and reproducible: a downloaded file is

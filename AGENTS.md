@@ -87,7 +87,7 @@ Current limitations that must remain visible in user-facing work:
 - The tracker is based on a downloaded CPF and instantaneous geometric
   quantities. It is neither live telemetry nor telescope/laser-control
   software.
-- The tracker displays round-trip microseconds (`us (RT)`) as `2 * range / c`
+- The tracker displays round-trip microseconds (`μs (RT)`) as `2 * range / c`
   in vacuum, not a corrected SLR light-time solution. Azimuth/elevation use four
   displayed decimal places; this is display precision, not validated accuracy.
 - Space clears the tracker search after toggling. Countdown searches return
@@ -102,8 +102,13 @@ Current limitations that must remain visible in user-facing work:
   `docs/ratgui-comparison-2026-11-14.md`; the user confirmed RATGUI uses UTC.
   Exact-epoch independent operational validation remains pending and is the
   highest-value next validation task.
-- Acquisition has a basic file cache but not yet retry policy or complete cache
-  provenance metadata. SGP4/OMM support is not implemented.
+- The tracker checks EDC hourly or 30 minutes before usable CPF expiry, with
+  five-minute retries near expiry/after failure. Checks use the serialized
+  background queue. Valid replacements reset countdowns; failures retain existing
+  data without extrapolation. Expiry/check status is shown for the focused target.
+- Acquisition has a basic file cache but not yet a general retry policy or
+  complete cache provenance metadata. Tracker retries are session-local.
+  SGP4/OMM support is not implemented.
 
 See `docs/project-status.md` for a concise developer handoff and
 `docs/software-flow.md` for the predict and live-tracker flows.

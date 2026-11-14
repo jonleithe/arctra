@@ -13,6 +13,7 @@
 #include <future>
 #include <iomanip>
 #include <iostream>
+#include <locale>
 #include <optional>
 #include <poll.h>
 #include <sstream>
@@ -65,7 +66,7 @@ private:
     bool active_{};
 };
 
-enum class Key { character, up, down, home, end, page_up, page_down, backspace, quit };
+enum class Key { character, up, down, home, end, page_up, page_down, backspace, tab, quit };
 
 struct Input {
     Key key{Key::character};
@@ -86,6 +87,7 @@ char read_byte() {
 Input read_input() {
     const char first = read_byte();
     if (first == 'q' || first == 'Q' || first == 3) return {Key::quit, {}};
+    if (first == '\t') return {Key::tab, {}};
     if (first == 127 || first == '\b') return {Key::backspace, {}};
     if (first != 27) return {Key::character, first};
     if (!input_available(25)) return {Key::quit, {}};
@@ -130,16 +132,59 @@ std::string format_time(const UtcTime time) {
     return output.str();
 }
 
+// Generated SGR colour sequences occupy no columns; UTF-8 symbols occupy one.
+std::size_t next_display_token(const std::string_view text, std::size_t offset) {
+    if (text[offset] == '\x1b' && offset + 1 < text.size() && text[offset + 1] == '[') {
+        const auto end = text.find('m', offset + 2);
+        if (end != std::string_view::npos) return end + 1;
+    }
+    ++offset;
+    while (offset < text.size() && (static_cast<unsigned char>(text[offset]) & 0xc0) == 0x80) ++offset;
+    return offset;
+}
+
+std::size_t character_count(const std::string_view value) {
+    std::size_t columns = 0;
+    for (std::size_t i = 0; i < value.size();) {
+        if (value[i] != '\x1b') ++columns;
+        i = next_display_token(value, i);
+    }
+    return columns;
+}
+
 std::string clipped(std::string_view value, const std::size_t width) {
-    if (value.size() <= width) return std::string{value};
-    if (width < 2) return std::string{value.substr(0, width)};
-    return std::string{value.substr(0, width - 1)} + "~";
+    if (character_count(value) <= width) return std::string{value};
+    if (width == 0) return {};
+    std::size_t offset = 0;
+    std::size_t columns = 0;
+    while (offset < value.size() && columns < width - 1) {
+        if (value[offset] != '\x1b') ++columns;
+        offset = next_display_token(value, offset);
+    }
+    return std::string{value.substr(0, offset)} + "~\x1b[39m";
 }
 
 std::string padded(std::string value, const std::size_t width) {
     value = clipped(value, width);
-    if (value.size() < width) value.append(width - value.size(), ' ');
+    const auto count = character_count(value);
+    if (count < width) value.append(width - count, ' ');
     return value;
+}
+
+std::string coloured(const std::string_view text, const int colour) {
+    return "\x1b[" + std::to_string(colour) + "m" + std::string{text} + "\x1b[39m";
+}
+
+class GroupedNumbers : public std::numpunct<char> {
+    char do_thousands_sep() const override { return ' '; }
+    std::string do_grouping() const override { return "\3"; }
+};
+
+std::string grouped_number(const double value, const int decimals) {
+    std::ostringstream output;
+    output.imbue(std::locale{std::locale::classic(), new GroupedNumbers});
+    output << std::fixed << std::setprecision(decimals) << value;
+    return output.str();
 }
 
 std::string catalog_row(const Satellite& satellite, const bool selected,
@@ -172,10 +217,21 @@ struct PendingCpfLoad {
     bool active{};
 };
 
+struct RefreshState {
+    UtcTime next_check{};
+    bool queued{};
+};
+
+UtcTime coverage_end(const CpfEphemeris& ephemeris) {
+    return ephemeris.positions().empty() ? ephemeris.header().intended_end
+        : std::min(ephemeris.header().intended_end, ephemeris.positions().back().epoch);
+}
+
 struct CpfLoadResult {
     Satellite satellite;
     std::optional<LiveCpfTarget> target;
     std::string error;
+    bool online{};
 };
 
 std::vector<DisplaySample> evaluate_all(const std::vector<LiveCpfTarget>& targets,
@@ -224,6 +280,15 @@ std::string format_countdown(const UtcTime now, const UtcTime event) {
     return output.str();
 }
 
+std::string cpf_expiry_label(const UtcTime now, const CpfEphemeris& ephemeris) {
+    const auto end = coverage_end(ephemeris);
+    if (now >= end) return coloured("CPF EXPIRED", 31);
+    if (end - now <= std::chrono::minutes{30}) {
+        return coloured("CPF EXPIRING " + format_countdown(now, end), 33);
+    }
+    return coloured("CPF OK", 32);
+}
+
 std::vector<std::size_t> live_display_order(const std::vector<DisplaySample>& samples,
                                             const std::vector<VisibilityTimer>& timers) {
     std::vector<std::size_t> indices(samples.size());
@@ -266,15 +331,19 @@ void render(const SatelliteSelectionModel& model,
             const UtcTime time,
             const std::size_t page_size,
             const std::size_t first_visible,
-            const std::string_view message) {
+            const std::string_view message,
+            const bool live_focus,
+            const std::size_t live_first,
+            const std::size_t live_cursor,
+            const std::unordered_map<std::string, RefreshState>& refresh_states) {
     const auto width = terminal_columns();
     const auto list_width = std::min<std::size_t>(38, width / 3);
     const auto detail_width = width > list_width + 3 ? width - list_width - 3 : 0;
     std::ostringstream output;
     output << "\x1b[2J\x1b[H"
            << "Arctra live tracker  " << observatory.name() << "  " << format_time(time) << "\n"
-           << "Minimum elevation: " << std::fixed << std::setprecision(1)
-           << observatory.minimum_elevation_deg() << " deg\n\n";
+           << "Visibility threshold: " << std::fixed << std::setprecision(1)
+           << observatory.minimum_elevation_deg() << "°\n\n";
 
     if (detail_width == 0) {
         output << "Terminal is too narrow for the live tracker.\n";
@@ -282,11 +351,17 @@ void render(const SatelliteSelectionModel& model,
         return;
     }
 
+    const auto total = model.selected_count();
+    const auto range = total == 0 ? std::string{"0 of 0"}
+        : std::to_string(live_first + 1) + "–" +
+          std::to_string(std::min(live_first + page_size, total)) + " of " + std::to_string(total);
     output << "Find: " << model.query() << "_  "
            << (model.query().empty() ? model.visible().size() : model.match_count()) << " matches  "
-           << model.selected_count() << " selected\n"
-           << std::left << std::setw(static_cast<int>(list_width)) << "Catalog (Space select)"
-           << " | Satellite          Live geometric data\n"
+           << total << " selected\n";
+    output << padded(live_focus ? "  Catalog (Space select)" : "▶ Catalog (Space select)", list_width)
+           << "\x1b[0m | ";
+    output << clipped(std::string{live_focus ? "▶ " : "  "} + "Live targets · " + range, detail_width)
+           << "\x1b[0m\n"
            << std::string(list_width, '-') << "-+-" << std::string(detail_width, '-') << '\n';
 
     const auto& visible = model.visible();
@@ -295,14 +370,16 @@ void render(const SatelliteSelectionModel& model,
         if (catalog_index < visible.size()) {
             const auto& satellite = *visible[catalog_index];
             const auto catalog_text = catalog_row(satellite, model.is_selected(satellite.key), list_width);
-            if (catalog_index == model.cursor()) output << "\x1b[7m" << catalog_text << "\x1b[0m";
+            if (!live_focus && catalog_index == model.cursor()) output << "\x1b[7m" << catalog_text << "\x1b[0m";
             else output << catalog_text;
         } else {
             output << std::string(list_width, ' ');
         }
 
         output << " | ";
-        if (row >= display_order.size() + pending_loads.size()) {
+        const auto live_row = live_first + row;
+        if (live_focus && live_row == live_cursor && live_row < total) output << "\x1b[7m";
+        if (live_row >= display_order.size() + pending_loads.size()) {
             const auto selected = model.selected();
             std::vector<const Satellite*> failed;
             for (const auto* satellite : selected) {
@@ -316,66 +393,106 @@ void render(const SatelliteSelectionModel& model,
                     failed.push_back(satellite);
                 }
             }
-            const auto failure_index = row - display_order.size() - pending_loads.size();
+            const auto failure_index = live_row - display_order.size() - pending_loads.size();
             if (failure_index < failed.size()) {
-                output << clipped("CPF failed for " + failed[failure_index]->name + "; Space retries", detail_width);
-            } else if (row == 0 && targets.empty() && pending_loads.empty()) {
+                output << clipped(coloured("CPF UNAVAILABLE", 31) + " for " + failed[failure_index]->name + "; retry pending", detail_width);
+            } else if (live_row == 0 && targets.empty() && pending_loads.empty()) {
                 output << "Select an Earth-orbiting target with Space";
             }
-            output << '\n';
+            output << "\x1b[0m\n";
             continue;
         }
-        if (row >= display_order.size()) {
-            const auto& pending = pending_loads[row - display_order.size()];
+        if (live_row >= display_order.size()) {
+            const auto& pending = pending_loads[live_row - display_order.size()];
             output << clipped(std::string{pending.active ? "Loading CPF for " : "Queued CPF for "} +
                                   pending.satellite.name + "...",
                               detail_width)
-                   << '\n';
+                   << "\x1b[0m\n";
             continue;
         }
-        const auto index = display_order[row];
+        const auto index = display_order[live_row];
         const auto& display = samples[index];
-        if (!display.sample) {
-            output << clipped(padded(targets[index].satellite.name, 18) + "Unavailable: " +
-                                  display.error,
+        if (!display.sample || time >= coverage_end(targets[index].ephemeris)) {
+            output << clipped(padded(targets[index].satellite.name, 18) + coloured("UNKNOWN", 90) + " | " +
+                                  cpf_expiry_label(time, targets[index].ephemeris) + " | " + display.error +
+                                  (refresh_states.at(targets[index].satellite.key).queued
+                                      ? " [refresh queued/loading]" : " [retry pending]"),
                               detail_width);
         } else {
             const auto& sample = *display.sample;
             std::ostringstream data;
             data << std::left << std::setw(18) << clipped(targets[index].satellite.name, 17)
-                 << std::setw(12) << (sample.above_minimum_elevation ? "ABOVE" : "below")
+                 << coloured(padded(sample.above_minimum_elevation ? "ABOVE" : "below", 8),
+                             sample.above_minimum_elevation ? 32 : 90)
+                 << cpf_expiry_label(time, targets[index].ephemeris) << "  "
                  << std::right << std::fixed << std::setprecision(4)
-                 << " Az " << std::setw(8) << sample.look.azimuth_deg << " deg"
-                 << "  El " << std::setw(8) << sample.look.elevation_deg << " deg"
+                 << " Az " << std::setw(8) << sample.look.azimuth_deg << "°"
+                 << "  El " << std::setw(8) << sample.look.elevation_deg << "°"
                  << "  " << std::setprecision(0) << std::setw(8)
-                 << sample.look.slant_range_m / 1000.0 << " km"
+                 << grouped_number(sample.look.slant_range_m / 1000.0, 0) << " km"
                  << "  " << std::setprecision(1) << std::setw(10)
-                 << sample.round_trip_light_time_us << " us (RT)";
+                 << grouped_number(sample.round_trip_light_time_us, 1) << " μs(RT)";
             const auto& timer = timers[index];
             if (timer.event) {
                 data << "  "
                      << (timer.event->kind == VisibilityEventKind::rises_above_threshold
                              ? "rises in "
-                             : "sets in ")
+                             : " sets in ")
                      << format_countdown(time, timer.event->time);
             } else if (timer.error.empty()) {
                 data << "  no rise within CPF coverage";
             } else {
                 data << "  timer unavailable";
             }
+
+            const auto state = refresh_states.find(targets[index].satellite.key);
+            if (state != refresh_states.end() && state->second.queued) data << " [refresh queued/loading]";
+            else if (load_errors.contains(targets[index].satellite.key)) data << coloured(" [refresh failed; retry pending]", 33);
             output << clipped(data.str(), detail_width);
         }
-        output << '\n';
+        output << "\x1b[0m\n";
     }
 
-    output << "\nType to find  Space select/deselect  Up/Down move  Home/End first/last\n"
-           << "PgUp/PgDn scroll  q/Esc quit  Refresh: 1 s"
+    const Satellite* focused = nullptr;
+    if (live_focus && live_cursor < display_order.size()) focused = &targets[display_order[live_cursor]].satellite;
+    else if (!live_focus && !model.visible().empty()) focused = model.visible()[model.cursor()];
+    std::ostringstream status;
+    if (focused && model.is_selected(focused->key)) {
+        status << focused->name << " | ";
+        const auto target = std::find_if(targets.begin(), targets.end(), [&](const auto& item) {
+            return item.satellite.key == focused->key;
+        });
+        if (target != targets.end()) {
+            status << cpf_expiry_label(time, target->ephemeris) << " | ";
+            if (live_focus) {
+                status << "expires " << format_time(coverage_end(target->ephemeris)) << " | ";
+            }
+        }
+        const auto state = refresh_states.find(focused->key);
+        if (state != refresh_states.end() && state->second.queued) status << "refresh queued/loading";
+        else if (state != refresh_states.end()) {
+            if (load_errors.contains(focused->key)) status << coloured("refresh failed; ", target != targets.end() && time >= coverage_end(target->ephemeris) ? 31 : 33);
+            status << "next check " << format_time(state->second.next_check);
+        } else status << "queued";
+    } else status << "CPF checks: hourly; retries: 5 min; current data retained while usable";
+    output << '\n' << clipped(status.str(), width);
+
+    output << (live_focus
+        ? "\nTab: catalog  Up/Down: scroll  Home/End: first/last\n"
+        : "\nTab: live pane  Type to find  Space: select/deselect  Up/Down: move\n")
+           << "PgUp/PgDn: page  q/Esc: quit  Refresh: 1 s"
            << (message.empty() ? "" : "   " + std::string{message}) << "\n"
            << "Light times are geometric vacuum values from CPF range, not corrected SLR timing.\n";
     std::cout << output.str() << std::flush;
 }
 
 }  // namespace
+
+UtcTime next_cpf_refresh(const UtcTime now, const UtcTime end, const bool successful) {
+    using namespace std::chrono_literals;
+    if (!successful) return now + 5min;
+    return std::max(now + 5min, std::min(now + 1h, end - 30min));
+}
 
 LiveTrackSample evaluate_live_track(const CpfEphemeris& ephemeris,
                                     const Satellite& satellite,
@@ -435,9 +552,13 @@ void run_live_tracker(const SatelliteCatalog& catalog,
     std::vector<VisibilityTimer> timers;
     std::vector<PendingCpfLoad> pending_loads;
     std::unordered_map<std::string, std::string> load_errors;
+    std::unordered_map<std::string, RefreshState> refresh_states;
     std::optional<std::future<CpfLoadResult>> active_load;
     std::string message;
     std::size_t first_visible{};
+    std::size_t live_first{};
+    std::size_t live_cursor{};
+    bool live_focus = false;
 
     // Do this before starting the loader so the catalog reflects requested
     // priorities immediately. select_key also ignores duplicates and
@@ -454,12 +575,23 @@ void run_live_tracker(const SatelliteCatalog& catalog,
                                        [](const auto& pending) { return !pending.active; });
         if (next == pending_loads.end()) return;
         next->active = true;
+        refresh_states[next->satellite.key].queued = true;
         const auto satellite = next->satellite;
         active_load.emplace(std::async(std::launch::async, [satellite] {
             try {
                 CpfAcquisition acquisition{".arctra-cache/cpf"};
-                const auto path = acquisition.acquire(satellite);
-                return CpfLoadResult{satellite, LiveCpfTarget{satellite, load_cpf(path)}, {}};
+                bool online = true;
+                std::filesystem::path path;
+                try {
+                    path = acquisition.acquire(satellite, false);
+                } catch (...) {
+                    online = false;
+                    path = acquisition.acquire(satellite);
+                }
+                auto ephemeris = load_cpf(path);
+                const auto now = std::chrono::time_point_cast<UtcTime::duration>(std::chrono::system_clock::now());
+                (void)ephemeris.interpolate(now); // Never install expired or future-only predictions.
+                return CpfLoadResult{satellite, LiveCpfTarget{satellite, std::move(ephemeris)}, {}, online};
             } catch (const std::exception& error) {
                 return CpfLoadResult{satellite, std::nullopt, error.what()};
             }
@@ -471,18 +603,37 @@ void run_live_tracker(const SatelliteCatalog& catalog,
                                 std::future_status::ready) {
             return;
         }
-        const auto result = active_load->get();
+        auto result = active_load->get();
         active_load.reset();
         pending_loads.erase(std::remove_if(pending_loads.begin(), pending_loads.end(),
                                            [&result](const auto& pending) {
                                                return pending.satellite.key == result.satellite.key;
                                            }),
                             pending_loads.end());
-        if (result.target && model.is_selected(result.satellite.key)) {
-            targets.push_back(std::move(*result.target));
-            timers.push_back({});
-        } else if (!result.error.empty() && model.is_selected(result.satellite.key)) {
-            load_errors[result.satellite.key] = result.error;
+        if (model.is_selected(result.satellite.key)) {
+            const auto now = std::chrono::time_point_cast<UtcTime::duration>(std::chrono::system_clock::now());
+            auto found = std::find_if(targets.begin(), targets.end(), [&](const auto& target) {
+                return target.satellite.key == result.satellite.key;
+            });
+            auto end = now;
+            if (result.target) {
+                end = coverage_end(result.target->ephemeris);
+                // Keep existing data if an offline fallback would shorten coverage.
+                if (found == targets.end()) {
+                    targets.push_back(std::move(*result.target));
+                    timers.push_back({});
+                } else if (end >= coverage_end(found->ephemeris)) {
+                    const auto index = static_cast<std::size_t>(found - targets.begin());
+                    *found = std::move(*result.target);
+                    timers[index] = {};
+                }
+                if (result.online) load_errors.erase(result.satellite.key);
+                else load_errors[result.satellite.key] = "EDC check failed; using cached CPF";
+            } else {
+                load_errors[result.satellite.key] = result.error;
+            }
+            refresh_states[result.satellite.key] = {
+                next_cpf_refresh(now, end, result.target.has_value() && result.online), false};
         }
         start_next_load();
     };
@@ -492,22 +643,59 @@ void run_live_tracker(const SatelliteCatalog& catalog,
         start_next_load();
         const auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now());
+        for (const auto* satellite : model.selected()) {
+            auto state = refresh_states.find(satellite->key);
+            const bool pending = std::any_of(pending_loads.begin(), pending_loads.end(), [&](const auto& load) {
+                return load.satellite.key == satellite->key;
+            });
+            if (!pending && state != refresh_states.end() && now >= state->second.next_check) {
+                pending_loads.push_back({*satellite, false});
+                state->second.queued = true;
+            }
+        }
+        start_next_load();
         const auto samples = evaluate_all(targets, observatory, now);
         refresh_visibility_timers(targets, observatory, now, timers);
         const auto display_order = live_display_order(samples, timers);
         const auto rows = terminal_rows();
-        const auto page_size = rows > 11 ? rows - 11 : std::size_t{3};
+        const auto page_size = rows > 12 ? rows - 12 : std::size_t{3};
         if (model.cursor() < first_visible) first_visible = model.cursor();
         if (model.cursor() >= first_visible + page_size) {
             first_visible = model.cursor() - page_size + 1;
         }
-        render(model, targets, samples, timers, display_order, pending_loads, load_errors,
-               observatory, now, page_size, first_visible, message);
+        const auto live_total = model.selected_count();
+        const auto live_max = live_total > page_size ? live_total - page_size : 0;
+        live_cursor = std::min(live_cursor, live_total == 0 ? 0 : live_total - 1);
+        if (live_cursor < live_first) live_first = live_cursor;
+        if (live_cursor >= live_first + page_size) live_first = live_cursor - page_size + 1;
+        live_first = std::min(live_first, live_max);
+        auto visible_pending = pending_loads;
+        std::erase_if(visible_pending, [&](const auto& load) {
+            return std::any_of(targets.begin(), targets.end(), [&](const auto& target) {
+                return target.satellite.key == load.satellite.key;
+            });
+        });
+        render(model, targets, samples, timers, display_order, visible_pending, load_errors,
+               observatory, now, page_size, first_visible, message, live_focus, live_first, live_cursor, refresh_states);
         message.clear();
 
         if (!input_available(1000)) continue;
         const auto input = read_input();
         if (input.key == Key::quit) return;
+        if (input.key == Key::tab) {
+            live_focus = !live_focus;
+            continue;
+        }
+        if (live_focus) {
+            const auto last = live_total == 0 ? 0 : live_total - 1;
+            if (input.key == Key::up && live_cursor > 0) --live_cursor;
+            else if (input.key == Key::down) live_cursor = std::min(live_cursor + 1, last);
+            else if (input.key == Key::page_up) live_cursor -= std::min(live_cursor, page_size);
+            else if (input.key == Key::page_down) live_cursor = std::min(live_cursor + page_size, last);
+            else if (input.key == Key::home) live_cursor = 0;
+            else if (input.key == Key::end) live_cursor = last;
+            continue;
+        }
         if (input.key == Key::up) model.move_up();
         else if (input.key == Key::down) model.move_down();
         else if (input.key == Key::home) model.move_home();
@@ -537,6 +725,7 @@ void run_live_tracker(const SatelliteCatalog& catalog,
                                                    }),
                                     pending_loads.end());
                 load_errors.erase(satellite.key);
+                refresh_states.erase(satellite.key);
                 model.toggle_current();
                 message = "Stopped " + satellite.name;
             } else {

@@ -103,5 +103,12 @@ int main() {
         rejected_outside_coverage = true;
     }
     require(rejected_outside_coverage);
+    // Refresh cadence is bounded: early refresh before expiry, with a retry
+    // floor so an unchanged near-expiry file cannot cause a request loop.
+    require(arctra::next_cpf_refresh(epoch, epoch + 3h, true) == epoch + 1h);
+    require(arctra::next_cpf_refresh(epoch, epoch + 45min, true) == epoch + 15min);
+    require(arctra::next_cpf_refresh(epoch, epoch + 20min, true) == epoch + 5min);
+    require(arctra::next_cpf_refresh(epoch, epoch - 1min, true) == epoch + 5min);
+    require(arctra::next_cpf_refresh(epoch, epoch + 3h, false) == epoch + 5min);
     return EXIT_SUCCESS;
 }

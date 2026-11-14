@@ -113,12 +113,14 @@ also clears the typed search while keeping the cursor on the current target.
 The dashboard shows each selected target's instantaneous geometric azimuth and
 elevation to four decimal places, slant range in kilometres, and whether
 elevation is at or above the observatory's `min-elevation` threshold. Extra
-displayed decimal places do not establish prediction accuracy.
+displayed decimal places do not establish prediction accuracy. Angles use `°`;
+range and round-trip time use spaces to group thousands (for example,
+`20 345 km` and `135 729.8 μs (RT)`). The dashboard requires a UTF-8 terminal.
 
 CPF retrieval for a newly selected target happens in the background. It appears
 as `Loading CPF...` (or `Queued CPF...` when another request is already in
 progress) in the live-data pane until its file has been validated.
-It also reports round-trip light time (`2 * range / c`), labelled `us (RT)`.
+It also reports round-trip light time (`2 * range / c`), labelled `μs (RT)`.
 This is a vacuum light time derived from instantaneous CPF range, not a
 corrected or operational SLR timing solution. Below the threshold it counts
 down to the next predicted rise; once
@@ -135,7 +137,36 @@ Currently the same message is also used for targets remaining above threshold.
 `timer unavailable` means the search failed, for example at a data gap or an
 unsupported interpolation epoch. Current look angles can remain available even
 when a future countdown cannot be calculated. No-event results and failures
-are cached for that selection; deselect/reselect to retry.
+are cached until the CPF is refreshed; deselect/reselect to retry immediately.
+
+Press **Tab** to switch focus between the catalog and live pane. The active
+pane is marked `▶`; the live pane highlights its current target row rather
+than its header. The catalog cursor is highlighted only when the catalog has
+focus. Up/Down, Page Up/Down, and Home/End operate on the
+focused pane. In the live pane they move the highlighted row and scroll independently of the catalog;
+its header shows the visible range, for example `Live targets · 1–20 of 137`.
+Queued and failed CPF loads are included in this range. Search and Space
+selection operate only in the catalog. The footer shows the active controls.
+Live rows continue to reorder as visibility changes; scrolling preserves the
+row position rather than locking onto a particular satellite.
+
+The tracker automatically checks EDC for each selected target once an hour,
+or 30 minutes before its current usable coverage ends, whichever comes first.
+Near expiry, and after failed checks, it retries at five-minute intervals.
+These are application policies, not assumptions about provider update times.
+Checks share the serialized background queue; a busy queue or slow network can
+delay an individual check. Existing data stays available during refresh.
+A replacement must pass target/header validation and interpolation at the current
+UTC epoch before installation. Files that shorten existing coverage are retained
+in the cache but do not replace the loaded prediction. Countdown caches reset
+when a replacement is installed. Expired data is unavailable, never extrapolated.
+
+The highlighted target's footer shows CPF health and the next check or refresh
+status. With the live pane active, it also shows the exact usable expiry in UTC,
+including for green `CPF OK` targets. Wide live rows also show expiry and pending/failed refresh status.
+If EDC is unavailable, a usable cached file can support tracking, but the online
+check is treated as failed and retried in five minutes. Failed initial loads
+also retry automatically. Deselected targets stop receiving scheduled checks.
 
 The live pane puts targets currently at or above the elevation threshold first,
 then below-threshold targets by their next predicted rise. This is a display
@@ -180,3 +211,10 @@ The first station photo comparison with NASA RATGUI is recorded in
 UTC. Preliminary angular agreement is encouraging, but the photographs are
 not synchronized and do not establish operational accuracy. Exact-epoch
 comparison with identified CPF inputs and station configuration remains open.
+
+Visibility and prediction health have separate coloured labels: green `ABOVE`
+and grey `below` refer to the configured minimum-elevation threshold. CPF status
+is green `CPF OK` with no expiry countdown, yellow `CPF EXPIRING hh:mm:ss` within
+30 minutes of usable expiry, and red `CPF EXPIRED` at expiry. Hours can exceed
+24. Unavailable positions show `UNKNOWN` and omit current angles and range.
+Status colour resets preserve the active row's reverse-video highlight.

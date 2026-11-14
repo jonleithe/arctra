@@ -52,6 +52,10 @@ struct LiveCpfTarget {
     const Observatory& observatory,
     UtcTime time);
 
+// Refresh hourly, or 30 minutes before expiry; near expiry and after errors,
+// retry after five minutes rather than queueing continuously.
+[[nodiscard]] UtcTime next_cpf_refresh(UtcTime now, UtcTime coverage_end, bool successful);
+
 // Linux terminal dashboard. The catalog stays visible throughout the run:
 // Space adds/removes the highlighted target, fetching and validating its CPF
 // when needed. It refreshes once per second and exits on q or Escape.
