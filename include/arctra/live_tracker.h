@@ -55,7 +55,7 @@ struct LiveCpfTarget {
 // Space adds/removes the highlighted target, fetching and validating its CPF
 // when needed. It refreshes once per second and exits on q or Escape.
 void run_live_tracker(const SatelliteCatalog& catalog,
-                      std::vector<LiveCpfTarget> initial_targets,
+                      std::vector<Satellite> initial_satellites,
                       const Observatory& observatory);
 
 }  // namespace arctra

@@ -412,17 +412,26 @@ std::optional<NextVisibilityEvent> next_visibility_event(const CpfEphemeris& eph
 }
 
 void run_live_tracker(const SatelliteCatalog& catalog,
-                      std::vector<LiveCpfTarget> targets,
+                      std::vector<Satellite> initial_satellites,
                       const Observatory& observatory) {
     RawTerminal terminal;
     SatelliteSelectionModel model{catalog};
-    for (const auto& target : targets) model.select_key(target.satellite.key);
-    std::vector<VisibilityTimer> timers(targets.size());
+    std::vector<LiveCpfTarget> targets;
+    std::vector<VisibilityTimer> timers;
     std::vector<PendingCpfLoad> pending_loads;
     std::unordered_map<std::string, std::string> load_errors;
     std::optional<std::future<CpfLoadResult>> active_load;
     std::string message;
     std::size_t first_visible{};
+
+    // Do this before starting the loader so the catalog reflects requested
+    // priorities immediately. select_key also ignores duplicates and
+    // catalog-only (for example lunar) entries.
+    for (const auto& satellite : initial_satellites) {
+        if (model.is_selected(satellite.key)) continue;
+        model.select_key(satellite.key);
+        if (satellite.is_earth_orbiting()) pending_loads.push_back({satellite, false});
+    }
 
     const auto start_next_load = [&] {
         if (active_load) return;

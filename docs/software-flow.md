@@ -57,9 +57,14 @@ and frames rather than mixing incompatible coordinates.
 
 ## Live tracker flow
 
-`arctra track --observatory FILE` keeps the local catalog and selected target
-data in one terminal view. The catalog is checked in with the application;
-typing/searching in this view does not perform an online satellite lookup.
+`arctra track [--pri] --observatory FILE` keeps the local catalog and selected
+target data in one terminal view. The catalog is checked in with the
+application; typing/searching in this view does not perform an online satellite
+lookup.
+
+With `--pri`, Arctra reads `priorities.sat` from the current directory and
+marks its Earth-orbiting entries selected before rendering the dashboard. Their
+CPF loads are then queued in the background just like a Space selection.
 
 ```mermaid
 flowchart TD

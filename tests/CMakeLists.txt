@@ -61,3 +61,14 @@ set_tests_properties(
     cli_satellite_id_search
     PROPERTIES PASS_REGULAR_EXPRESSION "lageos1.*8820.*CPF candidate"
 )
+
+# --pri must read the checked-in priorities file before the interactive
+# terminal is opened. In CTest there is deliberately no terminal, so the
+# wrapper expects the terminal diagnostic after successful parsing/loading.
+add_test(
+    NAME cli_track_priorities
+    COMMAND "${CMAKE_COMMAND}"
+        "-DARCTRA_EXECUTABLE=$<TARGET_FILE:arctra>"
+        "-DARCTRA_SOURCE_DIRECTORY=${CMAKE_SOURCE_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_track_priorities.cmake"
+)

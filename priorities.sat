@@ -1,0 +1,18 @@
+# Initial live-tracker priorities for Ny-Alesund.
+#
+# One current Arctra satellite key or display name per line. Blank lines and
+# lines beginning with # are ignored. Edit this file to match the observing
+# programme, then start the dashboard from this directory with:
+#   arctra track --pri --observatory nyal.ini
+
+lageos1
+lageos2
+etalon1
+etalon2
+lares
+lares2
+hy2b
+hy2c
+hy2d
+hy2e
+stella

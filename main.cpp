@@ -37,19 +37,21 @@ struct TrackOptions {
     std::string observatory_file;
 };
 
+constexpr std::string_view priority_satellite_file{"priorities.sat"};
+
 void print_usage(std::ostream& output) {
     output << "Usage:\n"
            << "  arctra satellites list\n"
            << "  arctra satellites search QUERY\n"
            << "  arctra predict (--select | --satellite NAME[,NAME...] | --sat-file FILE) "
               "--observatory FILE [--dur HOURS[h]]\n\n"
-           << "  arctra track [--satellite NAME[,NAME...] | --sat-file FILE] "
+           << "  arctra track [--pri] [--satellite NAME[,NAME...] | --sat-file FILE] "
               "--observatory FILE\n\n"
            << "Example:\n  arctra predict --satellite lageos1,lageos2,etalon1 "
               "--observatory nyal.ini --dur 24h\n"
            << "  arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h\n"
            << "  arctra predict --select --observatory nyal.ini --dur 24h\n"
-           << "  arctra track --observatory nyal.ini\n";
+           << "  arctra track --pri --observatory nyal.ini\n";
 
 }
 
@@ -143,6 +145,9 @@ TrackOptions parse_track_options(const int argc, char* argv[],
         } else if (argument == "--sat-file") {
             arctra::append_satellites_from_file(
                 options.satellites, catalog, require_value(argc, argv, index, argument));
+        } else if (argument == "--pri") {
+            arctra::append_satellites_from_file(options.satellites, catalog,
+                                                std::string{priority_satellite_file});
         } else if (argument == "--select") {
             // Kept as a harmless compatibility alias: tracking now always
             // presents its catalog inside the live dashboard.
@@ -250,28 +255,9 @@ int run_predict(const PredictOptions& options)
 
 int run_track(const TrackOptions& options, const arctra::SatelliteCatalog& catalog) {
     const auto observatory = arctra::load_observatory_ini(options.observatory_file);
-    arctra::CpfAcquisition acquisition{".arctra-cache/cpf"};
-    std::vector<arctra::LiveCpfTarget> targets;
-    std::vector<arctra::Satellite> unavailable_satellites;
-    targets.reserve(options.satellites.size());
-
-    for (const auto& satellite : options.satellites) {
-        try {
-            const auto path = acquisition.acquire(satellite);
-            targets.push_back({satellite, arctra::load_cpf(path)});
-        } catch (const arctra::CurrentCpfUnavailable&) {
-            unavailable_satellites.push_back(satellite);
-        }
-    }
-
-    if (!unavailable_satellites.empty()) {
-        std::cerr << "Skipped satellites without a current EDC CPF:\n";
-        for (const auto& satellite : unavailable_satellites) {
-            std::cerr << "  - " << satellite.name << " (" << satellite.key << ")\n";
-        }
-        std::cerr << '\n';
-    }
-    arctra::run_live_tracker(catalog, std::move(targets), observatory);
+    // Initial targets are selected before the dashboard opens. The tracker
+    // queues their CPF retrieval there, keeping the terminal responsive.
+    arctra::run_live_tracker(catalog, options.satellites, observatory);
     return EXIT_SUCCESS;
 }
 

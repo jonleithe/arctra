@@ -24,7 +24,9 @@ The authoritative implementation is the current `master` branch; begin with
   data stay in one terminal view. Space selects/deselects targets; one CPF load
   runs in the background at a time and appears as loading/queued/failed in the
   live pane. Ready rows are ordered: above threshold first, then by time to
-  next rise.
+  next rise. `--pri` preselects targets from the editable checked-in
+  `priorities.sat` file (resolved from the current directory) and queues them
+  after the dashboard opens.
 
 ## Important conventions and limits
 

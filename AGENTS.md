@@ -77,7 +77,9 @@ Implemented and committed on `master`:
   catalog on the left and selected target data on the right. Targets can be
   added/removed in place; CPF loading is serialized in the background and is
   represented in the live pane. Ready targets are ordered with currently
-  above-threshold targets first, then by time to next rise.
+  above-threshold targets first, then by time to next rise. `--pri` preselects
+  entries from the editable current-directory `priorities.sat` file and queues
+  their loading after the dashboard opens.
 - Unit and CLI smoke tests. Run `ctest --preset dev` after a development build.
 
 Current limitations that must remain visible in user-facing work:

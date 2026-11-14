@@ -97,6 +97,17 @@ and deselected without leaving the live view:
 ./build/release/arctra track --observatory nyal.ini
 ```
 
+Use `--pri` to open the tracker with the targets listed in the editable
+checked-in [`priorities.sat`](priorities.sat) file already selected. The file
+is resolved from the current directory; it uses the same one-key-per-line,
+comments-allowed format as `--sat-file`. Their CPF requests are queued in the
+background after the dashboard appears. `--pri` can be combined with
+`--satellite` or `--sat-file` to add further initial selections.
+
+```bash
+./build/release/arctra track --pri --observatory nyal.ini
+```
+
 Use Space on the highlighted catalog target to start or stop tracking. The
 dashboard shows each selected target's instantaneous geometric azimuth,
 elevation, slant range, and whether elevation is at or above the observatory's
