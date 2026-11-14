@@ -1,5 +1,6 @@
 #include "arctra/cpf.h"
 #include "arctra/cpf_acquisition.h"
+#include "arctra/live_tracker.h"
 #include "arctra/observatory_file.h"
 #include "arctra/pass_finder.h"
 #include "arctra/satellite.h"
@@ -31,16 +32,24 @@ struct PredictOptions {
     std::chrono::seconds duration{std::chrono::hours{24}};
 };
 
+struct TrackOptions {
+    std::vector<arctra::Satellite> satellites;
+    std::string observatory_file;
+};
+
 void print_usage(std::ostream& output) {
     output << "Usage:\n"
            << "  arctra satellites list\n"
            << "  arctra satellites search QUERY\n"
            << "  arctra predict (--select | --satellite NAME[,NAME...] | --sat-file FILE) "
               "--observatory FILE [--dur HOURS[h]]\n\n"
+           << "  arctra track [--satellite NAME[,NAME...] | --sat-file FILE] "
+              "--observatory FILE\n\n"
            << "Example:\n  arctra predict --satellite lageos1,lageos2,etalon1 "
               "--observatory nyal.ini --dur 24h\n"
            << "  arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h\n"
-           << "  arctra predict --select --observatory nyal.ini --dur 24h\n";
+           << "  arctra predict --select --observatory nyal.ini --dur 24h\n"
+           << "  arctra track --observatory nyal.ini\n";
 
 }
 
@@ -116,6 +125,33 @@ PredictOptions parse_predict_options(const int argc, char* argv[],
     }
     if (!options.select_satellites && options.satellites.empty()) {
         throw std::invalid_argument("use --select, --satellite, or --sat-file");
+    }
+    if (options.observatory_file.empty()) {
+        throw std::invalid_argument("--observatory is required");
+    }
+    return options;
+}
+
+TrackOptions parse_track_options(const int argc, char* argv[],
+                                 const arctra::SatelliteCatalog& catalog) {
+    TrackOptions options;
+    for (int index = 2; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--satellite") {
+            add_satellites(options.satellites, catalog,
+                           require_value(argc, argv, index, argument));
+        } else if (argument == "--sat-file") {
+            arctra::append_satellites_from_file(
+                options.satellites, catalog, require_value(argc, argv, index, argument));
+        } else if (argument == "--select") {
+            // Kept as a harmless compatibility alias: tracking now always
+            // presents its catalog inside the live dashboard.
+            continue;
+        } else if (argument == "--observatory") {
+            options.observatory_file = require_value(argc, argv, index, argument);
+        } else {
+            throw std::invalid_argument("unknown option: " + std::string{argument});
+        }
     }
     if (options.observatory_file.empty()) {
         throw std::invalid_argument("--observatory is required");
@@ -212,6 +248,33 @@ int run_predict(const PredictOptions& options)
     return EXIT_SUCCESS;
 }
 
+int run_track(const TrackOptions& options, const arctra::SatelliteCatalog& catalog) {
+    const auto observatory = arctra::load_observatory_ini(options.observatory_file);
+    arctra::CpfAcquisition acquisition{".arctra-cache/cpf"};
+    std::vector<arctra::LiveCpfTarget> targets;
+    std::vector<arctra::Satellite> unavailable_satellites;
+    targets.reserve(options.satellites.size());
+
+    for (const auto& satellite : options.satellites) {
+        try {
+            const auto path = acquisition.acquire(satellite);
+            targets.push_back({satellite, arctra::load_cpf(path)});
+        } catch (const arctra::CurrentCpfUnavailable&) {
+            unavailable_satellites.push_back(satellite);
+        }
+    }
+
+    if (!unavailable_satellites.empty()) {
+        std::cerr << "Skipped satellites without a current EDC CPF:\n";
+        for (const auto& satellite : unavailable_satellites) {
+            std::cerr << "  - " << satellite.name << " (" << satellite.key << ")\n";
+        }
+        std::cerr << '\n';
+    }
+    arctra::run_live_tracker(catalog, std::move(targets), observatory);
+    return EXIT_SUCCESS;
+}
+
 void print_satellites(const std::vector<const arctra::Satellite*>& satellites) {
     std::cout << std::left << std::setw(20) << "CPF key" << std::setw(22) << "Name"
               << std::setw(12) << "ILRS ID" << std::setw(12) << "NORAD ID" << "Status\n"
@@ -274,6 +337,10 @@ int main(const int argc, char* argv[])
                 options.satellites = std::move(*selected);
             }
             return run_predict(options);
+        }
+        if (std::string_view{argv[1]} == "track") {
+            auto options = parse_track_options(argc, argv, catalog);
+            return run_track(options, catalog);
         }
         print_usage(std::cerr);
         return EXIT_FAILURE;

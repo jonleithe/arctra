@@ -18,6 +18,9 @@ int main() {
 
     require(model.visible().size() == 144);
     require(model.selected_count() == 0);
+    model.select_key("lageos1");
+    require(model.is_selected("lageos1"));
+    model.clear_selection();
     model.move_end();
     require(model.cursor() == 143);
     model.move_up();

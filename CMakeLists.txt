@@ -19,6 +19,7 @@ add_library(
     src/coordinates.cpp
     src/cpf_acquisition.cpp
     src/cpf.cpp
+    src/live_tracker.cpp
     src/observatory.cpp
     src/observatory_file.cpp
     src/pass_finder.cpp

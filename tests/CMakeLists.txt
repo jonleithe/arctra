@@ -45,6 +45,11 @@ target_link_libraries(arctra_pass_finder_test PRIVATE arctra::core)
 arctra_set_project_warnings(arctra_pass_finder_test)
 add_test(NAME pass_finder COMMAND arctra_pass_finder_test)
 
+add_executable(arctra_live_tracker_test live_tracker_test.cpp)
+target_link_libraries(arctra_live_tracker_test PRIVATE arctra::core)
+arctra_set_project_warnings(arctra_live_tracker_test)
+add_test(NAME live_tracker COMMAND arctra_live_tracker_test)
+
 add_test(NAME cli_satellite_search COMMAND arctra satellites search lageos)
 set_tests_properties(
     cli_satellite_search

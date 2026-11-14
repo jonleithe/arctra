@@ -78,6 +78,13 @@ void SatelliteSelectionModel::toggle_current() {
     if (selected_keys_.erase(satellite.key) == 0) selected_keys_.insert(satellite.key);
 }
 
+void SatelliteSelectionModel::select_key(const std::string_view key) {
+    const auto* satellite = catalog_.find(key);
+    if (satellite != nullptr && satellite->is_earth_orbiting()) {
+        selected_keys_.insert(satellite->key);
+    }
+}
+
 void SatelliteSelectionModel::select_all_visible() {
     for (const auto* satellite : visible_) {
         if (satellite->is_earth_orbiting()) selected_keys_.insert(satellite->key);

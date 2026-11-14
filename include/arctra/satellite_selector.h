@@ -33,6 +33,10 @@ public:
     [[nodiscard]] std::size_t cursor() const noexcept;
 
     void toggle_current();
+    // Adds one known Earth-orbiting target without changing the cursor or
+    // query. Used when a caller has already acquired its CPF before opening a
+    // shared selection-and-tracking view.
+    void select_key(std::string_view key);
     void select_all_visible();
     void clear_selection() noexcept;
     [[nodiscard]] bool is_selected(std::string_view key) const;

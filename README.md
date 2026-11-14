@@ -84,6 +84,31 @@ etalon1
 
 An example selection is provided in `examples/standard-slr-targets.txt`.
 
+## Live tracker
+
+The terminal dashboard samples the current CPF position once per second. Its
+catalog remains visible throughout the session, so satellites can be selected
+and deselected without leaving the live view:
+
+```bash
+./build/release/arctra track --observatory nyal.ini
+```
+
+Use Space on the highlighted catalog target to start or stop tracking. The
+dashboard shows each selected target's instantaneous geometric azimuth,
+elevation, slant range, and whether elevation is at or above the observatory's
+`min-elevation` threshold.
+
+CPF retrieval for a newly selected target happens in the background. It appears
+as `Loading CPF...` (or `Queued CPF...` when another request is already in
+progress) in the live-data pane until its file has been validated.
+It also reports one-way light time (`range / c`) and, for reference, the
+corresponding geometric round-trip time. These are vacuum light times derived
+from instantaneous CPF range, not a corrected or operational SLR timing
+solution. Below the threshold it counts down to the next predicted rise; once
+above it counts down to the predicted set. Press `q` or Escape to leave the
+dashboard.
+
 The machine-readable snapshot is
 [`data/edc-active-satellites.csv`](data/edc-active-satellites.csv), with source
 notes and a readable table in
