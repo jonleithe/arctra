@@ -55,7 +55,52 @@ OMM/GP elements with SGP4 are appropriate for exploring orbit propagation and co
 
 ## Proposed work sequence
 
-### Milestone 1 — CPF geometry for one satellite
+## Current implementation status — 2026-11-14
+
+The repository has progressed beyond the initial Milestone 1-only brief. Do
+not treat the milestones below as an indication that earlier work is absent;
+inspect the current code and tests before proposing a duplicate implementation.
+
+Implemented and committed on `master`:
+
+- CPF v2 parsing for the currently supported subset: passive, Earth-orbiting
+  targets in geocentric true body-fixed frame `0`, using common-epoch type-10
+  position records.
+- Ten-point, ninth-order Lagrange interpolation; geometric WGS 84 ECEF-to-ENU
+  azimuth, elevation, and slant range; threshold pass finding with refined
+  AOS/LOS and culmination.
+- EDC current-directory acquisition with provider-issued-file caching and CPF
+  header validation against the selected satellite.
+- A checked-in 144-entry EDC active-target catalog, name/ID search, target
+  files, and interactive terminal selection.
+- `arctra track --observatory FILE`: a live terminal dashboard with the local
+  catalog on the left and selected target data on the right. Targets can be
+  added/removed in place; CPF loading is serialized in the background and is
+  represented in the live pane. Ready targets are ordered with currently
+  above-threshold targets first, then by time to next rise.
+- Unit and CLI smoke tests. Run `ctest --preset dev` after a development build.
+
+Current limitations that must remain visible in user-facing work:
+
+- The tracker is based on a downloaded CPF and instantaneous geometric
+  quantities. It is neither live telemetry nor telescope/laser-control
+  software.
+- The displayed one-way and round-trip microseconds are `range / c` and
+  `2 * range / c` in vacuum, not a corrected SLR light-time solution.
+- Lunar reflectors remain catalog-visible but unsupported by the Earth-orbit
+  path. Their CPF use requires transmit/return light-time legs and lunar
+  orientation treatment.
+- The current UTC representation cannot preserve a distinct `23:59:60` label;
+  do not claim reliable prediction across a leap second.
+- There is no independent operational comparison yet. This is the highest
+  value next validation task when station predictions are available.
+- Acquisition has a basic file cache but not yet retry policy or complete cache
+  provenance metadata. SGP4/OMM support is not implemented.
+
+See `docs/project-status.md` for a concise developer handoff and
+`docs/software-flow.md` for the predict and live-tracker flows.
+
+### Milestone 1 — CPF geometry for one satellite (implemented subset; validation pending)
 
 1. Obtain a real, recent CPF v2 prediction for LAGEOS-1, initially by manual download if that is simpler.
 2. Parse the header and required position records; reject malformed or unsupported records with actionable errors.
@@ -66,7 +111,7 @@ OMM/GP elements with SGP4 are appropriate for exploring orbit propagation and co
 7. Compute topocentric East-North-Up (ENU) position, geometric azimuth, elevation, and slant range.
 8. Compare output at several epochs with a trusted independent prediction or reference interpolation implementation.
 
-### Milestone 2 — Pass search for all six satellites
+### Milestone 2 — Pass search for all six satellites (implemented for supported CPF targets)
 
 1. Load predictions for all six target satellites.
 2. Accept observer station, UTC start/end timestamps, and configurable minimum elevation angle.
@@ -75,14 +120,14 @@ OMM/GP elements with SGP4 are appropriate for exploring orbit propagation and co
 5. Print UTC AOS, culmination/max-elevation time, LOS, duration, maximum elevation, and optional azimuth/range at important epochs.
 6. Correctly handle partial passes intersecting interval boundaries and continuous above-threshold visibility; don't mislabel these as ordinary AOS/LOS events.
 
-### Milestone 3 — Download and refresh data
+### Milestone 3 — Download and refresh data (basic acquisition/cache implemented)
 
 1. Add an HTTP(S) retrieval layer, preferably libcurl, with retries and clear error messages.
 2. Implement a cache with source URL, retrieval timestamp, prediction interval, target ID, and format/version metadata.
 3. Keep the parser usable on local files for offline work and reproducible testing.
 4. Verify that the prediction covers each requested epoch; detect stale, missing, or mismatched data instead of silently proceeding.
 
-### Milestone 4 — Independent SGP4 path (optional after CPF works)
+### Milestone 4 — Independent SGP4 path (not started; optional after CPF validation)
 
 1. Download OMM/GP data for the geodetic satellites from CelesTrak.
 2. Use a well-validated SGP4 implementation or implement it carefully with Vallado's reference tests.
@@ -141,6 +186,12 @@ slr-predict/
 └── examples/
 ```
 
-## First Codex task
+## Current handoff for Codex
 
-Start with **Milestone 1 only**. Propose a minimal C++20 data model and CMake project, identify a real CPF v2 example to use as a test fixture, and implement a parser plus interpolation and topocentric geometric calculations. Before implementing ambiguous CPF fields or interpolation details, consult the official specification and explain the interpretation. Add tests and a minimal CLI that reports LAGEOS-1 azimuth, elevation, and range for a supplied UTC epoch and station location. Do **not** jump ahead to network fetching, full SGP4 integration, GUI work, or operational laser control.
+Start by reading `docs/project-status.md`, `README.md`, and the current test
+suite. Preserve the existing mathematical and operational limits. The next
+recommended task is an evidence-backed comparison of CPF-derived output with
+Ny-Ålesund operational predictions at several epochs; record the exact CPF
+provider/file, station configuration, and comparison results. Do not add SGP4,
+operational pointing/control, or lunar tracking merely because those future
+paths are listed above.

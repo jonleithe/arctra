@@ -1,9 +1,8 @@
 # Arctra software flow
 
-This chart describes the current `arctra predict` path: from a command-line
-request to geometric pass predictions. All reported directions and ranges are
-instantaneous geometric quantities; this is not telescope or laser-control
-software.
+This document describes the current `arctra predict` and `arctra track` paths.
+All reported directions and ranges are instantaneous geometric quantities; this
+is not telescope or laser-control software.
 
 ```mermaid
 flowchart TD
@@ -56,6 +55,43 @@ The parser currently supports only passive Earth-orbiting targets in CPF
 reference frame `0`: geocentric true body-fixed. It rejects other target types
 and frames rather than mixing incompatible coordinates.
 
+## Live tracker flow
+
+`arctra track --observatory FILE` keeps the local catalog and selected target
+data in one terminal view. The catalog is checked in with the application;
+typing/searching in this view does not perform an online satellite lookup.
+
+```mermaid
+flowchart TD
+    A[User runs arctra track] --> B[Load local catalog and observatory INI]
+    B --> C[Render catalog pane and live-data pane]
+    C --> D{User presses Space}
+    D -- deselect --> E[Remove target from live evaluation]
+    D -- select Earth-orbiting target --> F[Queue CPF acquisition]
+    D -- select catalog-only lunar target --> G[Show unsupported-target message]
+
+    F --> H[One background CPF load at a time]
+    H --> I[Acquire cached or current EDC CPF]
+    I --> J{Header and supported geometry valid?}
+    J -- no --> K[Show CPF failed; user may retry]
+    J -- yes --> L[Add target to live evaluation]
+    L --> C
+
+    C --> M[Each second: interpolate CPF at UTC now]
+    M --> N[Convert ECEF position to ENU look angle]
+    N --> O[Display azimuth, elevation, range and range/c]
+    O --> P{Above minimum elevation?}
+    P -- yes --> Q[Show ABOVE and countdown to predicted set]
+    P -- no --> R[Show below and countdown to predicted rise]
+    Q --> S[Order live rows: above first]
+    R --> S
+    S --> C
+```
+
+The next threshold event is found with the same CPF pass-search/refinement
+logic as `predict`, then cached until it occurs. The display refresh is live;
+the ephemeris is the downloaded CPF, not real-time spacecraft telemetry.
+
 ## Deliberate limits
 
 - A CPF must cover the full requested interval; Arctra does not extrapolate.
@@ -64,3 +100,7 @@ and frames rather than mixing incompatible coordinates.
 - The output omits light-time iteration, atmosphere/refraction, station
   displacement, instrument calibration, safety interlocks, and any control
   interface.
+- Live-track microseconds are geometric vacuum range divided by the speed of
+  light. They are not corrected one-way or two-way SLR timing.
+- The current UTC representation cannot preserve a distinct leap-second label;
+  do not use this implementation to predict across a leap second.

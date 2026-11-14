@@ -40,6 +40,9 @@ Entries marked `CPF candidate` have the identifiers needed to attempt CPF
 acquisition; this is not a guarantee that a current compatible file exists.
 Entries marked `catalog only` (currently lunar reflectors without a NORAD ID)
 can be discovered but cannot be passed to the Earth-orbiting CPF predictor.
+`catalog only` does **not** mean that the target can never have a CPF: lunar
+reflector CPFs use different transmit/return and lunar-orientation geometry,
+which Arctra does not yet implement.
 Search and selection are separate from prediction so a future interactive TUI
 can reuse the same catalog without changing the orbital calculations.
 
@@ -108,6 +111,10 @@ from instantaneous CPF range, not a corrected or operational SLR timing
 solution. Below the threshold it counts down to the next predicted rise; once
 above it counts down to the predicted set. Press `q` or Escape to leave the
 dashboard.
+
+The live pane puts targets currently at or above the elevation threshold first,
+then below-threshold targets by their next predicted rise. This is a display
+order only; the catalog pane remains searchable in its normal catalog order.
 
 The machine-readable snapshot is
 [`data/edc-active-satellites.csv`](data/edc-active-satellites.csv), with source
