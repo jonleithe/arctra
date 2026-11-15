@@ -50,6 +50,11 @@ target_link_libraries(arctra_live_tracker_test PRIVATE arctra::core)
 arctra_set_project_warnings(arctra_live_tracker_test)
 add_test(NAME live_tracker COMMAND arctra_live_tracker_test)
 
+add_executable(arctra_sky_plot_test sky_plot_test.cpp)
+target_link_libraries(arctra_sky_plot_test PRIVATE arctra::core)
+arctra_set_project_warnings(arctra_sky_plot_test)
+add_test(NAME sky_plot COMMAND arctra_sky_plot_test)
+
 add_test(NAME cli_satellite_search COMMAND arctra satellites search lageos)
 set_tests_properties(
     cli_satellite_search

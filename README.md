@@ -147,6 +147,20 @@ focused pane. In the live pane they move the highlighted row and scroll independ
 its header shows the visible range, for example `Live targets · 1–20 of 137`.
 Queued and failed CPF loads are included in this range. Search and Space
 selection operate only in the catalog. The footer shows the active controls.
+
+On a terminal at least 80 columns by 30 rows, press **V** to switch to a
+full-terminal polar sky view; press **V** again to return to the dashboard.
+North is up, east is right, the configured minimum-elevation threshold is the
+outer ring, and the centre is zenith. `@` marks the focused target, `*` marks
+a target at or above the threshold, and `o` marks one below it. Below-threshold
+targets are drawn on the outer ring in their correct azimuthal direction; use
+the live rows for their exact elevation. This is a qualitative display of the
+same instantaneous geometric CPF directions as the live rows, not an
+operational telescope-pointing display. The focused target is yellow,
+above-threshold targets are green, and below-threshold targets are grey; each
+marker is labelled with its satellite name where the plot has space.
+Above-threshold labels show rounded geometric slant range in kilometres on the
+line below the satellite name.
 Live rows continue to reorder as visibility changes; scrolling preserves the
 row position rather than locking onto a particular satellite.
 

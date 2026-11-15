@@ -3,6 +3,7 @@
 #include "arctra/coordinates.h"
 #include "arctra/cpf_acquisition.h"
 #include "arctra/satellite_selector.h"
+#include "arctra/sky_plot.h"
 
 #include <algorithm>
 #include <cctype>
@@ -335,8 +336,52 @@ void render(const SatelliteSelectionModel& model,
             const bool live_focus,
             const std::size_t live_first,
             const std::size_t live_cursor,
-            const std::unordered_map<std::string, RefreshState>& refresh_states) {
+            const std::unordered_map<std::string, RefreshState>& refresh_states,
+            const bool show_sky_view) {
     const auto width = terminal_columns();
+    if (show_sky_view) {
+        const auto rows = terminal_rows();
+        const Satellite* focused = nullptr;
+        if (live_focus && live_cursor < display_order.size()) {
+            focused = &targets[display_order[live_cursor]].satellite;
+        } else if (!live_focus && !model.visible().empty()) {
+            focused = model.visible()[model.cursor()];
+        }
+
+        std::vector<SkyPlotTarget> plot_targets;
+        plot_targets.reserve(samples.size());
+        for (std::size_t index = 0; index < samples.size(); ++index) {
+            if (!samples[index].sample) continue;
+            const auto& sample = *samples[index].sample;
+            plot_targets.push_back({sample.satellite.name, sample.look.azimuth_deg,
+                                    sample.look.elevation_deg, sample.look.slant_range_m,
+                                    focused && sample.satellite.key == focused->key,
+                                    sample.above_minimum_elevation});
+        }
+
+        const auto plot_height = rows > 6 ? rows - 6 : SkyPlot::minimum_height();
+        SkyPlot plot{width, plot_height, observatory.minimum_elevation_deg()};
+        std::ostringstream output;
+        output << "\x1b[2J\x1b[H"
+               << "Arctra sky view  " << observatory.name() << "  " << format_time(time) << '\n'
+               << "Instantaneous geometric CPF directions; " << std::fixed << std::setprecision(1)
+               << observatory.minimum_elevation_deg() << "° threshold outer ring, zenith centre.\n";
+        for (const auto& line : plot.render(plot_targets)) output << line << '\n';
+        if (focused && model.is_selected(focused->key)) {
+            const auto target = std::find_if(targets.begin(), targets.end(), [&](const auto& item) {
+                return item.satellite.key == focused->key;
+            });
+            output << "Focus: " << focused->name;
+            if (target != targets.end()) output << " | " << cpf_expiry_label(time, target->ephemeris);
+        } else {
+            output << "Focus: select a target in the dashboard to mark it here";
+        }
+        output << "\nV: dashboard  q/Esc: quit  Refresh: 1 s\n"
+               << "Geometric display only; not operational telescope or laser pointing.\n";
+        std::cout << output.str() << std::flush;
+        return;
+    }
+
     const auto list_width = std::min<std::size_t>(38, width / 3);
     const auto detail_width = width > list_width + 3 ? width - list_width - 3 : 0;
     std::ostringstream output;
@@ -456,6 +501,7 @@ void render(const SatelliteSelectionModel& model,
     const Satellite* focused = nullptr;
     if (live_focus && live_cursor < display_order.size()) focused = &targets[display_order[live_cursor]].satellite;
     else if (!live_focus && !model.visible().empty()) focused = model.visible()[model.cursor()];
+
     std::ostringstream status;
     if (focused && model.is_selected(focused->key)) {
         status << focused->name << " | ";
@@ -480,7 +526,7 @@ void render(const SatelliteSelectionModel& model,
     output << (live_focus
         ? "\nTab: catalog  Up/Down: scroll  Home/End: first/last\n"
         : "\nTab: live pane  Type to find  Space: select/deselect  Up/Down: move\n")
-           << "PgUp/PgDn: page  q/Esc: quit  Refresh: 1 s"
+           << "PgUp/PgDn: page  V: sky view  q/Esc: quit  Refresh: 1 s"
            << (message.empty() ? "" : "   " + std::string{message}) << "\n"
            << "Light times are geometric vacuum values from CPF range, not corrected SLR timing.\n";
     std::cout << output.str() << std::flush;
@@ -559,6 +605,7 @@ void run_live_tracker(const SatelliteCatalog& catalog,
     std::size_t live_first{};
     std::size_t live_cursor{};
     bool live_focus = false;
+    bool show_sky_view = false;
 
     // Do this before starting the loader so the catalog reflects requested
     // priorities immediately. select_key also ignores duplicates and
@@ -676,12 +723,23 @@ void run_live_tracker(const SatelliteCatalog& catalog,
             });
         });
         render(model, targets, samples, timers, display_order, visible_pending, load_errors,
-               observatory, now, page_size, first_visible, message, live_focus, live_first, live_cursor, refresh_states);
+               observatory, now, page_size, first_visible, message, live_focus, live_first, live_cursor,
+               refresh_states, show_sky_view);
         message.clear();
 
         if (!input_available(1000)) continue;
         const auto input = read_input();
         if (input.key == Key::quit) return;
+        if (input.key == Key::character && input.character == 'V') {
+            if (!show_sky_view && (terminal_columns() < 80 || terminal_rows() < 30)) {
+                message = "Sky view needs a terminal at least 80 columns by 30 rows";
+            } else {
+                show_sky_view = !show_sky_view;
+                message = show_sky_view ? "Sky view enabled" : "Sky view hidden";
+            }
+            continue;
+        }
+        if (show_sky_view) continue;
         if (input.key == Key::tab) {
             live_focus = !live_focus;
             continue;

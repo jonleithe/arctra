@@ -26,6 +26,7 @@ add_library(
     src/satellite.cpp
     src/satellite_file.cpp
     src/satellite_selector.cpp
+    src/sky_plot.cpp
 )
 target_link_libraries(arctra_core PRIVATE CURL::libcurl)
 add_library(arctra::core ALIAS arctra_core)
