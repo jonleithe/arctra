@@ -38,8 +38,12 @@ struct TrackOptions {
 };
 
 constexpr std::string_view priority_satellite_file{"priorities.sat"};
+// constexpr std::string_view priority_satellite_file{"sat.pri"};
 
-void print_usage(std::ostream& output) {
+
+
+void print_usage(std::ostream& output)
+{
     output << "Usage:\n"
            << "  arctra satellites list\n"
            << "  arctra satellites search QUERY\n"
