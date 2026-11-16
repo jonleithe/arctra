@@ -44,6 +44,12 @@ The authoritative implementation is the current `master` branch; begin with
   configured minimum-elevation threshold as the outer ring. Below-threshold
   targets are placed on that ring by azimuth for context; the view is
   qualitative and is not an operational pointing display.
+- The `feature/linux-cesium-gui` branch contains an experimental browser-hosted
+  CesiumJS globe. A loopback-only Python bridge connects the shared renderer to
+  a persistent C++ worker using the existing CPF acquisition, interpolation and
+  ECEF/ENU calculations. This first proof has live markers, catalog selection
+  and observer controls; trajectories, reference ellipses, observer profiles
+  and scheduled session refresh are not yet ported.
 - Countdown searches return the first rise/set, stopping at actual position
   coverage or header intent, whichever ends first. Regression tests cover
   shortened coverage, no-event results, and a later data gap.

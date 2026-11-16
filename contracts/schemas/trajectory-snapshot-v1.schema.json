@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://arctra.local/schemas/trajectory-snapshot-v1.schema.json",
+  "title": "Recorded CPF/ECEF trajectory preview, version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "predictionKind", "displayMode", "generatedAtUtc", "epochUtc", "target", "cpf", "trajectory"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "predictionKind": { "const": "cpf-ecef-geometric" },
+    "displayMode": { "enum": ["recorded-preview", "live"] },
+    "generatedAtUtc": { "$ref": "#/definitions/utc" },
+    "epochUtc": { "$ref": "#/definitions/utc" },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["key", "name", "noradId", "ilrsId"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z0-9]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "noradId": { "type": "integer", "minimum": 1 },
+        "ilrsId": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "cpf": {
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "filename", "sourceUrl", "retrievedAtUtc", "referenceFrame", "usableStartUtc", "usableEndUtc"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "filename": { "type": "string", "minLength": 1 },
+        "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "retrievedAtUtc": { "$ref": "#/definitions/utc" },
+        "referenceFrame": { "const": 0 },
+        "usableStartUtc": { "$ref": "#/definitions/utc" },
+        "usableEndUtc": { "$ref": "#/definitions/utc" }
+      }
+    },
+    "referenceOrbit": {
+      "description": "Optional illustrative closed two-body conic at one epoch. No time-tagged predicted states; nominal Earth rotation omits EOP and polar motion.",
+      "type": "object", "additionalProperties": false,
+      "required": ["model", "frame", "epochUtc", "semiMajorAxisM", "eccentricity", "periodSeconds", "positionsM"],
+      "properties": {
+        "model": { "const": "approximate-two-body" },
+        "frame": { "const": "epoch-frozen-terrestrial" },
+        "epochUtc": { "$ref": "#/definitions/utc" },
+        "semiMajorAxisM": { "type": "number", "exclusiveMinimum": 6378137 },
+        "eccentricity": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 },
+        "periodSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "positionsM": {
+          "type": "array", "minItems": 361, "maxItems": 361,
+          "items": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } }
+        }
+      }
+    },
+    "trajectory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sampleStepSeconds", "samples"],
+      "properties": {
+        "sampleStepSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
+        "samples": {
+          "type": "array", "minItems": 2, "maxItems": 86401,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["epochUtc", "positionEcefM"],
+            "properties": {
+              "epochUtc": { "$ref": "#/definitions/utc" },
+              "positionEcefM": {
+                "description": "Provider frame-0 Earth-fixed Cartesian x/y/z in metres; rendering must not extrapolate these samples.",
+                "type": "array", "minItems": 3, "maxItems": 3,
+                "items": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "utc": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-5][0-9]Z$" }
+  }
+}

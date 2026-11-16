@@ -50,8 +50,9 @@ set_target_properties(
 )
 arctra_set_project_warnings(arctra_core)
 
-add_executable(arctra main.cpp)
+add_executable(arctra main.cpp src/globe_launcher.cpp)
 target_link_libraries(arctra PRIVATE arctra::core)
+target_compile_definitions(arctra PRIVATE ARCTRA_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(
     arctra
     PROPERTIES
@@ -61,7 +62,26 @@ set_target_properties(
 
 arctra_set_project_warnings(arctra)
 
+add_executable(arctra-globe-worker src/globe_worker.cpp)
+target_link_libraries(arctra-globe-worker PRIVATE arctra::core)
+target_include_directories(arctra-globe-worker PRIVATE third_party)
+set_target_properties(
+    arctra-globe-worker
+    PROPERTIES
+        CXX_EXTENSIONS OFF
+        CXX_STANDARD_REQUIRED ON
+)
+arctra_set_project_warnings(arctra-globe-worker)
+
 include(CTest)
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(
+            NAME globe_worker_smoke
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/globe_worker_smoke.py"
+                    "$<TARGET_FILE:arctra-globe-worker>" "${CMAKE_CURRENT_BINARY_DIR}/globe-test-cache"
+        )
+    endif()
 endif()

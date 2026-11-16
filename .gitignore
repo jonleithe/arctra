@@ -1,2 +1,9 @@
 /build/
 /.arctra-cache/
+/globe/dist/
+/globe/node_modules/
+/globe/test-results/
+/globe/playwright-report/
+/globe/public/cesium/
+__pycache__/
+*.pyc

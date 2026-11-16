@@ -212,6 +212,36 @@ min-elevation = 10.0
 Replace the example coordinates with surveyed coordinates and document their
 reference-frame realization and coordinate epoch before precision use.
 
+## Experimental Linux globe
+
+The optional CesiumJS globe is developed on the `feature/linux-cesium-gui`
+branch. It runs in the default Linux browser and uses a loopback-only HTTP
+bridge to a persistent Arctra C++ worker; CPF parsing, interpolation and
+topocentric geometry are not implemented in JavaScript.
+
+Install Node.js and npm, then build the ordinary development configuration and
+the bundled globe assets:
+
+```bash
+./build.sh debug
+./scripts/build-globe.sh debug
+./build/dev/arctra globe
+```
+
+The command prints its `http://127.0.0.1:PORT/` address and opens it in the
+default browser. Stop it with Ctrl+C in the launching terminal. Select targets
+in the searchable catalog and edit the observer coordinates or minimum
+elevation directly in the sidebar. Current markers are evaluated once per
+second from validated EDC CPF files; green means at or above the configured
+minimum elevation.
+
+This first Linux proof deliberately omits the Windows application's sampled CPF
+trails, approximate closed reference ellipses, persisted observer profiles and
+scheduled in-session CPF refresh. It acquires each selected target once per
+process and never extrapolates after coverage. Restarting the globe starts a
+new acquisition check. It remains a geometric engineering visualization, not
+telemetry or operational telescope/laser pointing software.
+
 ## Current mathematical path
 
 Arctra currently supports passive Earth-orbiting targets in CPF v2 reference

@@ -1,5 +1,6 @@
 #include "arctra/cpf.h"
 #include "arctra/cpf_acquisition.h"
+#include "arctra/globe_launcher.h"
 #include "arctra/live_tracker.h"
 #include "arctra/observatory_file.h"
 #include "arctra/pass_finder.h"
@@ -51,6 +52,7 @@ void print_usage(std::ostream& output)
               "--observatory FILE [--dur HOURS[h]]\n\n"
            << "  arctra track [--pri] [--satellite NAME[,NAME...] | --sat-file FILE] "
               "--observatory FILE\n\n"
+           << "  arctra globe\n\n"
            << "Example:\n  arctra predict --satellite lageos1,lageos2,etalon1 "
               "--observatory nyal.ini --dur 24h\n"
            << "  arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h\n"
@@ -331,6 +333,9 @@ int main(const int argc, char* argv[])
         if (std::string_view{argv[1]} == "track") {
             auto options = parse_track_options(argc, argv, catalog);
             return run_track(options, catalog);
+        }
+        if (argc == 2 && std::string_view{argv[1]} == "globe") {
+            return arctra::run_globe();
         }
         print_usage(std::cerr);
         return EXIT_FAILURE;

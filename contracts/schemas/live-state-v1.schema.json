@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://arctra.local/schemas/live-state-v1.schema.json",
+  "title": "Current CPF geometric state, version 1",
+  "type": "object", "additionalProperties": false,
+  "required": ["schemaVersion", "ok", "epochUtc", "observer", "targets"],
+  "properties": {
+    "schemaVersion": { "const": 1 }, "ok": { "const": true },
+    "epochUtc": { "$ref": "#/definitions/utc" },
+    "observer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["latitudeDeg", "longitudeDeg", "ellipsoidalHeightM", "minElevationDeg"],
+      "properties": {
+        "latitudeDeg": { "type": "number", "minimum": -90, "maximum": 90 },
+        "longitudeDeg": { "type": "number", "minimum": -180, "maximum": 180 },
+        "ellipsoidalHeightM": { "type": "number" },
+        "minElevationDeg": { "type": "number", "minimum": -90, "maximum": 90 }
+      }
+    },
+    "snapshots": { "type": "array", "maxItems": 1000, "items": { "$ref": "https://arctra.local/schemas/trajectory-snapshot-v1.schema.json" } },
+    "targets": {
+      "type": "array", "maxItems": 1000,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["key", "name", "state"],
+        "properties": {
+          "key": { "type": "string", "pattern": "^[a-z0-9]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "state": { "enum": ["ready", "loading", "error", "expired", "outside-coverage"] },
+          "message": { "type": "string" }, "geometryError": { "type": "string" },
+          "positionEcefM": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+          "cpf": {
+            "type": "object", "additionalProperties": false,
+            "required": ["filename", "provider", "referenceFrame", "usableStartUtc", "usableEndUtc", "sourceUrl"],
+            "properties": {
+              "filename": { "type": "string", "minLength": 1 }, "provider": { "type": "string", "minLength": 1 },
+              "referenceFrame": { "const": 0 },
+              "usableStartUtc": { "$ref": "#/definitions/utc" }, "usableEndUtc": { "$ref": "#/definitions/utc" },
+              "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+              "retrievedAtUtc": { "$ref": "#/definitions/utc" }
+            }
+          },
+          "look": {
+            "type": "object", "additionalProperties": false,
+            "required": ["azimuthDeg", "elevationDeg", "slantRangeM", "aboveHorizon", "aboveThreshold"],
+            "properties": {
+              "azimuthDeg": { "type": "number", "minimum": 0, "exclusiveMaximum": 360 },
+              "elevationDeg": { "type": "number", "minimum": -90, "maximum": 90 },
+              "slantRangeM": { "type": "number", "exclusiveMinimum": 0 }, "aboveHorizon": { "type": "boolean" }, "aboveThreshold": { "type": "boolean" }
+            }
+          }
+        },
+        "allOf": [{
+          "if": { "properties": { "state": { "const": "ready" } } },
+          "then": { "properties": { "cpf": {}, "positionEcefM": {}, "look": {} }, "required": ["cpf", "positionEcefM", "look"] },
+          "else": { "not": { "anyOf": [
+            { "properties": { "positionEcefM": {} }, "required": ["positionEcefM"] },
+            { "properties": { "look": {} }, "required": ["look"] }
+          ] } }
+        }]
+      }
+    }
+  },
+  "definitions": { "utc": { "type": "string", "format": "date-time", "pattern": "Z$" } }
+}

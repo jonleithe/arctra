@@ -1,0 +1,31 @@
+html, body, #globe { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #070d16; }
+.cesium-viewer-bottom { padding: 4px 8px; background: #0c1420b3; }
+#trajectory-info { position: absolute; top: 22px; left: 22px; max-width: calc(100% - 76px); padding: 14px 16px; background: #101d2bdd; border: 1px solid #2a3b4d; color: #dbe8f5; font: 12px/1.7 system-ui; pointer-events: none; border-radius: 8px; box-shadow: 0 8px 28px #0003; }
+#trajectory-info strong { display: block; color: #f1d2a0; font-size: 12px; font-weight: 600; letter-spacing: .25px; }
+.snapshot-period { display: block; margin-top: 5px; color: #bccbdc; }
+.snapshot-caption { display: block; margin-top: 4px; color: #7e96b1; font-size: 11px; }
+#error { position: absolute; inset: 30% 15% auto; padding: 24px; background: #182536; color: #fff; font: 16px/1.6 system-ui; border: 1px solid #54718d; border-radius: 8px; }
+
+.standalone #globe { margin-left: 370px; width: calc(100% - 370px); }
+#standalone-controls { position: fixed; z-index: 5; inset: 0 auto 0 0; width: 370px; box-sizing: border-box; display: grid; grid-template-rows: auto minmax(220px, 1fr) auto auto; background: #0c1420; border-right: 1px solid #263548; color: #dbe8f5; font: 13px/1.4 system-ui, sans-serif; }
+#standalone-controls header { padding: 21px 22px; border-bottom: 1px solid #263548; color: #86a2be; letter-spacing: .12em; }
+#standalone-controls .wordmark { color: #f2f6fa; font-size: 20px; font-weight: 650; letter-spacing: .16em; }
+#standalone-controls section { padding: 16px 20px; overflow: hidden; }
+#standalone-controls h1 { margin: 0; font-size: 25px; }
+#standalone-controls h2 { margin: 0 0 9px; font-size: 16px; }
+#standalone-controls .muted { margin: 4px 0 10px; color: #91a8bf; font-size: 11px; }
+#standalone-controls input, #standalone-controls button { box-sizing: border-box; border: 1px solid #34485e; border-radius: 5px; background: #111e2c; color: #e6eef6; padding: 8px; }
+#standalone-controls input[type=search] { width: 100%; margin-bottom: 7px; }
+#target-list { height: calc(100% - 82px); overflow: auto; border-top: 1px solid #263548; }
+.target { display: flex; gap: 9px; align-items: start; padding: 9px 4px; border-bottom: 1px solid #1c2b3b; cursor: pointer; }
+.target input { margin-top: 3px; }
+.target strong, .target small { display: block; }
+.target small { margin-top: 2px; color: #7694af; font-size: 10px; }
+#standalone-controls .settings { border-top: 1px solid #263548; overflow: visible; }
+#standalone-controls .settings label { display: grid; gap: 3px; color: #91a8bf; font-size: 11px; }
+#standalone-controls .coordinates, #standalone-controls .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 7px; }
+#standalone-controls .actions button { cursor: pointer; }
+#standalone-controls .check { display: flex !important; align-items: center; margin-top: 8px; }
+#standalone-controls footer { display: grid; gap: 4px; padding: 11px 20px; border-top: 1px solid #263548; color: #91a8bf; font-size: 10px; }
+#live-badge { color: #87dbbc; letter-spacing: .07em; }
+@media (max-width: 800px) { #standalone-controls { width: 310px; } .standalone #globe { margin-left: 310px; width: calc(100% - 310px); } }
