@@ -80,6 +80,10 @@ Implemented and committed on `master`:
   above-threshold targets first, then by time to next rise. `--pri` preselects
   entries from the editable current-directory `priorities.sat` file and queues
   their loading after the dashboard opens.
+- A full-terminal polar sky view, toggled with `V` on terminals at least 80 by
+  30, plots selected targets using the same instantaneous geometric CPF look
+  directions as the tracker. It is a qualitative visualization, not an
+  operational pointing display.
 - Unit and CLI smoke tests. Run `ctest --preset dev` after a development build.
 
 Current limitations that must remain visible in user-facing work:

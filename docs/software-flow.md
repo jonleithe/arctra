@@ -18,8 +18,10 @@ flowchart TD
     Predict --> Table[Calculate passes and print UTC table]
     Command -- track --> Track[Open catalog and live tracker dashboard]
     Track --> Select[Space selects or deselects targets]
-    Select --> Live[Load CPF in background and refresh gjeometric data each second]
+    Select --> Live[Load CPF in background and refresh geometric data each second]
     Live --> Track
+    Track -- V on terminal at least 80x30 --> Sky[Show full-terminal polar sky view]
+    Sky -- V --> Track
 ```
 
 ## Predict flow
@@ -103,6 +105,15 @@ the header. Arrows, Page Up/Down, and Home/End navigate the
 focused pane. The live pane scrolls independently and reports its visible range,
 including queued and failed loads. Search and Space operate in the catalog;
 live ordering continues to update while retaining the scroll offset.
+
+On a terminal at least 80 columns by 30 rows, `V` switches between the
+dashboard and a full-terminal polar sky view. The plot uses the same
+instantaneous geometric CPF directions as the live rows: north is up, east is
+right, zenith is at the centre, and the configured minimum-elevation threshold
+is the outer ring. Below-threshold targets are placed on the outer ring in
+their azimuthal direction, so their exact elevation must be read from the live
+rows. This is a qualitative visualization, not an operational pointing
+display.
 
 `arctra track [--pri] --observatory FILE` keeps the local catalog and selected
 target data in one terminal view. The catalog is checked in with the

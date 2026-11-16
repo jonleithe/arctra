@@ -1,6 +1,6 @@
 # Arctra project status
 
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
 This is a short handoff for a developer or Codex session joining the project.
 The authoritative implementation is the current `master` branch; begin with
@@ -38,6 +38,12 @@ The authoritative implementation is the current `master` branch; begin with
   including queued/failed loads. Search and Space are catalog-only.
 - Tracker azimuth/elevation display uses four decimal places; light time is
   round-trip microseconds (`μs (RT)`). Space clears the search after toggling.
+- On terminals at least 80 columns by 30 rows, `V` toggles a full-terminal
+  polar sky view. It plots the same instantaneous geometric CPF directions as
+  the live rows, with north up, east right, zenith at the centre, and the
+  configured minimum-elevation threshold as the outer ring. Below-threshold
+  targets are placed on that ring by azimuth for context; the view is
+  qualitative and is not an operational pointing display.
 - Countdown searches return the first rise/set, stopping at actual position
   coverage or header intent, whichever ends first. Regression tests cover
   shortened coverage, no-event results, and a later data gap.
@@ -82,8 +88,9 @@ The `dev` preset builds in `build/dev`; `release` builds in `build/release`.
    Record exact UTC epochs, observatory configuration, CPF filename/provider,
    azimuth, elevation, range, and AOS/LOS differences. This validation matters
    more than adding another propagation source.
-2. Review live-tracker interaction and terminal layout at the station; retain
-   the current background-loader and no-extrapolation safeguards.
+2. Review live-tracker interaction, terminal layout, and the polar sky view at
+   the station; retain the current background-loader and no-extrapolation
+   safeguards.
 3. Add cache provenance/retries only after deciding the desired offline and
    refresh policy.
 4. Consider categorical mission metadata for the local catalog separately from
