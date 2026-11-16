@@ -67,7 +67,7 @@ private:
     bool active_{};
 };
 
-enum class Key { character, up, down, home, end, page_up, page_down, backspace, tab, quit };
+enum class Key { character, up, down, home, end, page_up, page_down, backspace, tab, backtab, quit };
 
 struct Input {
     Key key{Key::character};
@@ -98,6 +98,7 @@ Input read_input() {
     if (code == 'B') return {Key::down, {}};
     if (code == 'H') return {Key::home, {}};
     if (code == 'F') return {Key::end, {}};
+    if (code == 'Z') return {Key::backtab, {}};
     if ((code == '1' || code == '4' || code == '5' || code == '6' || code == '7' ||
          code == '8') && input_available(25)) {
         static_cast<void>(read_byte());
@@ -376,7 +377,7 @@ void render(const SatelliteSelectionModel& model,
         } else {
             output << "Focus: select a target in the dashboard to mark it here";
         }
-        output << "\nV: dashboard  q/Esc: quit  Refresh: 1 s\n"
+        output << "\nTab/Shift+Tab: next/previous target  V: dashboard  q/Esc: quit  Refresh: 1 s\n"
                << "Geometric display only; not operational telescope or laser pointing.\n";
         std::cout << output.str() << std::flush;
         return;
@@ -739,7 +740,46 @@ void run_live_tracker(const SatelliteCatalog& catalog,
             }
             continue;
         }
-        if (show_sky_view) continue;
+        if (show_sky_view) {
+            if (input.key == Key::tab || input.key == Key::backtab) {
+                const Satellite* focused = nullptr;
+                if (live_focus && live_cursor < display_order.size()) {
+                    focused = &targets[display_order[live_cursor]].satellite;
+                } else if (!live_focus && !model.visible().empty()) {
+                    focused = model.visible()[model.cursor()];
+                }
+
+                std::vector<std::size_t> drawable_rows;
+                drawable_rows.reserve(display_order.size());
+                for (std::size_t row = 0; row < display_order.size(); ++row) {
+                    if (samples[display_order[row]].sample) drawable_rows.push_back(row);
+                }
+                if (!drawable_rows.empty()) {
+                    auto current = drawable_rows.end();
+                    if (focused) {
+                        current = std::find_if(drawable_rows.begin(), drawable_rows.end(),
+                                               [&](const std::size_t row) {
+                                                   return targets[display_order[row]].satellite.key ==
+                                                          focused->key;
+                                               });
+                    }
+                    if (input.key == Key::backtab) {
+                        const auto previous = current == drawable_rows.end() || current == drawable_rows.begin()
+                            ? std::prev(drawable_rows.end())
+                            : std::prev(current);
+                        live_cursor = *previous;
+                    } else {
+                        const auto next = current == drawable_rows.end() ||
+                                                  std::next(current) == drawable_rows.end()
+                            ? drawable_rows.begin()
+                            : std::next(current);
+                        live_cursor = *next;
+                    }
+                    live_focus = true;
+                }
+            }
+            continue;
+        }
         if (input.key == Key::tab) {
             live_focus = !live_focus;
             continue;

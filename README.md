@@ -150,6 +150,9 @@ selection operate only in the catalog. The footer shows the active controls.
 
 On a terminal at least 80 columns by 30 rows, press **V** to switch to a
 full-terminal polar sky view; press **V** again to return to the dashboard.
+Press **Tab** in the sky view to move the yellow focus marker to the next
+drawable active target, or **Shift+Tab** to move to the previous one. Cycling
+wraps in both directions.
 North is up, east is right, the configured minimum-elevation threshold is the
 outer ring, and the centre is zenith. `@` marks the focused target, `*` marks
 a target at or above the threshold, and `o` marks one below it. Below-threshold
