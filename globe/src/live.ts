@@ -38,9 +38,25 @@ export function validateLiveFrame(value: unknown, nowMs = Date.now()): LiveFrame
       !Number.isFinite(look.elevationDeg) || Math.abs(look.elevationDeg) > 90 || !Number.isFinite(look.slantRangeM) || look.slantRangeM <= 0 ||
       look.aboveHorizon !== (look.elevationDeg >= 0) || look.aboveThreshold !== (look.elevationDeg >= frame.observer.minElevationDeg)) throw new Error('Invalid backend look geometry.');
   }
+  if (frame.snapshots) {
+    const snapshots = frame.snapshots.map(validateSnapshot);
+    if (new Set(snapshots.map(snapshot => snapshot.target.key)).size !== snapshots.length)
+      throw new Error('Duplicate live trajectory snapshot.');
+    for (const snapshot of snapshots) {
+      const target = frame.targets.find(candidate => candidate.key === snapshot.target.key);
+      if (!target || target.state !== 'ready') throw new Error('Live trajectory has no ready target.');
+      const observer = snapshot.trajectory.visibility?.observer;
+      if (!observer || observer.latitudeDeg !== frame.observer.latitudeDeg ||
+          observer.longitudeDeg !== frame.observer.longitudeDeg ||
+          observer.ellipsoidalHeightM !== frame.observer.ellipsoidalHeightM ||
+          observer.minElevationDeg !== frame.observer.minElevationDeg)
+        throw new Error('Live trajectory visibility uses a different observer.');
+    }
+  }
   return frame;
 }
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import schema from '../../contracts/schemas/live-state-v1.schema.json' with { type: 'json' };
 import trajectorySchema from '../../contracts/schemas/trajectory-snapshot-v1.schema.json' with { type: 'json' };
+import { validateSnapshot } from './snapshot';

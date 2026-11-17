@@ -21,6 +21,31 @@ test('all four selected targets have valid closed reference loops', () => {
   }
 });
 
+test('accepts station-classified visibility segments inside the CPF path', () => {
+  const value = structuredClone(snapshot);
+  value.trajectory.visibility = {
+    observer: { latitudeDeg: 78.923, longitudeDeg: 11.923, ellipsoidalHeightM: 50, minElevationDeg: 10 },
+    endReason: 'visible-pass-complete',
+    aboveThresholdSegments: [{ samples: value.trajectory.samples.slice(10, 20) }],
+  };
+  expect(validateSnapshot(value).trajectory.visibility!.aboveThresholdSegments).toHaveLength(1);
+  value.trajectory.visibility.aboveThresholdSegments[0].samples[0].epochUtc = '2026-11-01T00:00:00Z';
+  expect(() => validateSnapshot(value)).toThrow();
+});
+
+test('accepts a CPF-derived one-revolution display orbit', () => {
+  const value = structuredClone(snapshot);
+  value.trajectory.orbitView = {
+    model: 'cpf-nominal-earth-rotation', referenceEpochUtc: value.epochUtc,
+    estimatedPeriodSeconds: 13_500,
+    positionsM: value.referenceOrbit.positionsM,
+    aboveThresholdSegments: [{ positionsM: value.referenceOrbit.positionsM.slice(20, 40) }],
+  };
+  expect(validateSnapshot(value).trajectory.orbitView!.positionsM).toHaveLength(361);
+  value.trajectory.orbitView.referenceEpochUtc = '2026-11-16T10:00:00Z';
+  expect(() => validateSnapshot(value)).toThrow();
+});
+
 test('rejects incompatible, out-of-coverage, unordered and incorrectly scaled snapshots', () => {
   const mutate = (action: (copy: any) => void) => {
     const copy = structuredClone(snapshot);

@@ -47,9 +47,15 @@ The authoritative implementation is the current `master` branch; begin with
 - The `feature/linux-cesium-gui` branch contains an experimental browser-hosted
   CesiumJS globe. A loopback-only Python bridge connects the shared renderer to
   a persistent C++ worker using the existing CPF acquisition, interpolation and
-  ECEF/ENU calculations. This first proof has live markers, catalog selection
-  and observer controls; trajectories, reference ellipses, observer profiles
-  and scheduled session refresh are not yet ported.
+  ECEF/ENU calculations. This first proof has live markers, catalog selection,
+  observer controls, and a toggleable CPF-derived one-revolution orbit. The C++
+  worker removes nominal Earth rotation and freezes display axes at the current
+  epoch; this contextual loop approximates UTC as UT1 because CPF supplies no
+  EOP. Visibility remains based on the original Earth-fixed CPF geometry: the
+  loop is thin grey below threshold and coloured only over C++-classified
+  intervals with refined crossings. `globe --observatory FILE --pri` reuses the
+  validated CLI observatory and priority-file parsers for browser startup.
+  Persisted observer profiles and scheduled session refresh are not yet ported.
 - Countdown searches return the first rise/set, stopping at actual position
   coverage or header intent, whichever ends first. Regression tests cover
   shortened coverage, no-event results, and a later data gap.

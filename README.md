@@ -19,6 +19,10 @@ Required tools are CMake 3.20 or newer, Ninja, a C++20 compiler, and libcurl.
 ./build.sh all
 ```
 
+These commands build both the C++ targets and the browser globe. Use
+`--no-globe` for an explicit C++-only build. The globe requires Node.js 20.19+
+or 22.12+ and npm.
+
 Run the tests with:
 
 ```bash
@@ -224,9 +228,17 @@ the bundled globe assets:
 
 ```bash
 ./build.sh debug
-./scripts/build-globe.sh debug
-./build/dev/arctra globe
+./build/dev/arctra globe --observatory nyal.ini --pri
 ```
+
+For frontend-only iteration, `./scripts/build-globe.sh debug` remains available.
+
+`--observatory FILE` initializes the browser from the same validated INI format
+used by `predict` and `track`; the fields remain editable after launch. `--pri`
+loads `priorities.sat` from the current directory and uses those targets as the
+initial browser selection for this launch, overriding saved browser selections.
+Both options are optional, so `arctra globe` retains its built-in demonstration
+observer and saved selections.
 
 The command prints its `http://127.0.0.1:PORT/` address and opens it in the
 default browser. Stop it with Ctrl+C in the launching terminal. Select targets
@@ -235,9 +247,21 @@ elevation directly in the sidebar. Current markers are evaluated once per
 second from validated EDC CPF files; green means at or above the configured
 minimum elevation.
 
-This first Linux proof deliberately omits the Windows application's sampled CPF
-trails, approximate closed reference ellipses, persisted observer profiles and
-scheduled in-session CPF refresh. It acquires each selected target once per
+For each ready target, the browser draws one CPF-derived revolution as a thin
+grey loop. The C++ worker removes nominal Earth rotation from the provider's
+frame-0 samples and expresses the orbit in terrestrial axes frozen at the
+current reference epoch. This is contextual visualization: UTC approximates
+UT1 and polar motion is unavailable from CPF alone. Authoritative visibility
+still uses the original Earth-fixed CPF positions and the ordinary topocentric
+calculation. AOS/LOS brackets are bisected to 10 ms and only the corresponding
+parts of the frozen loop receive target-specific colour; below-threshold parts
+remain grey. The browser does not propagate, extrapolate, transform, or
+classify geometry. Trajectories refresh when the selected targets, observer,
+or threshold change, while instantaneous markers update once per second.
+
+This first Linux proof deliberately omits the Windows application's approximate
+closed reference ellipses, persisted observer profiles and scheduled in-session
+CPF refresh. It acquires each selected target once per
 process and never extrapolates after coverage. Restarting the globe starts a
 new acquisition check. It remains a geometric engineering visualization, not
 telemetry or operational telescope/laser pointing software.

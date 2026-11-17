@@ -12,6 +12,7 @@ request = {
         "minElevationDeg": 10.0,
     },
     "targets": [],
+    "includeTrajectories": True,
 }
 completed = subprocess.run(
     [sys.argv[1], sys.argv[2]], input=json.dumps(request) + "\n",
@@ -21,5 +22,6 @@ response = json.loads(completed.stdout)
 assert response["schemaVersion"] == 1
 assert response["ok"] is True
 assert response["targets"] == []
+assert response["snapshots"] == []
 assert response["observer"] == request["observer"]
 assert response["epochUtc"].endswith("Z")

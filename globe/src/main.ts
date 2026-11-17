@@ -102,16 +102,35 @@ async function start() {
   let endMarkers: Entity[] = [];
   let trajectoryPositions: Cartesian3[] = [];
   let frameBasis: Cartesian3[] = [];
+  let visibleIntervalCount = 0;
   const orbitBounds = new Map<string, Cartesian3[]>();
   let showTrajectory = false;
   let showReference = true;
   const previewPanel = document.querySelector<HTMLDivElement>('#trajectory-info')!;
+  previewPanel.dataset.trajectoryVisible = String(showTrajectory);
   let liveMode = false;
   let liveEpochMs = 0;
   let liveReceivedMs = 0;
   let liveKeys = new Set<string>();
   const liveExpiry = new Map<string, number>();
-  const palette: Record<string, string> = { lageos1: '#E4B76F', lageos2: '#72C8E7', lares: '#B49BE8', lares2: '#78D3B0' };
+  const palette: Record<string, string> = {
+    lageos1: '#F2B84B', lageos2: '#55C7F2', etalon1: '#E783D5', etalon2: '#A8D85C',
+    lares: '#B49BE8', lares2: '#78D3B0',
+  };
+  function targetColor(key: string) {
+    if (palette[key]) return Color.fromCssColorString(palette[key]);
+    // Stable fallback for the full catalog. FNV-style mixing avoids adjacent
+    // catalog keys receiving nearly identical hues.
+    let hash = 2166136261;
+    for (const character of key) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0;
+    return Color.fromHsl((hash % 360) / 360, 0.72, 0.67);
+  }
+  function trajectoryDurationLabel(startUtc: string, endUtc: string) {
+    const totalMinutes = Math.max(1, Math.round((Date.parse(endUtc) - Date.parse(startUtc)) / 60_000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours ? `+${hours} h${minutes ? ` ${minutes} min` : ''}` : `+${minutes} min`;
+  }
   function liveUnavailable(message: string) {
     for (const root of trajectoryRoots) root.show = false;
     observerLayer.setOrbitPositions([]);
@@ -145,6 +164,7 @@ async function start() {
     endMarkers = [];
     trajectoryPositions = [];
     frameBasis = [];
+    visibleIntervalCount = 0;
     orbitBounds.clear();
     observerLayer.setOrbitPositions([]);
     previewPanel.hidden = true;
@@ -179,19 +199,36 @@ async function start() {
       const snapshots = (Array.isArray(value) ? value : [value]).map(validateSnapshot);
       if (new Set(snapshots.map(snapshot => snapshot.target.key)).size !== snapshots.length) throw new Error('Duplicate target snapshots.');
       if (snapshots.some(snapshot => snapshot.epochUtc !== snapshots[0].epochUtc)) throw new Error('Selected reference orbits must share one reference epoch.');
+      visibleIntervalCount = snapshots.reduce((total, snapshot) =>
+        total + (snapshot.trajectory.orbitView?.aboveThresholdSegments.length ??
+          snapshot.trajectory.visibility?.aboveThresholdSegments.length ?? 0), 0);
       for (const snapshot of snapshots) {
       const positions = snapshot.trajectory.samples.map(sample => new Cartesian3(...sample.positionEcefM));
+      const orbitView = snapshot.trajectory.orbitView;
+      const displayPositions = orbitView
+        ? orbitView.positionsM.map(position => new Cartesian3(...position)) : positions;
       const loop = snapshot.referenceOrbit?.positionsM.map(position => new Cartesian3(...position));
-      const color = Color.fromCssColorString(palette[snapshot.target.key] ?? '#E4B76F');
-      trajectoryPositions = trajectoryPositions.concat(positions, loop ?? []);
-      orbitBounds.set(snapshot.target.key, positions.concat(loop ?? []));
-      if (frameBasis.length === 0) frameBasis = loop ?? positions;
+      const color = targetColor(snapshot.target.key);
+      const visibility = snapshot.trajectory.visibility;
+      trajectoryPositions = trajectoryPositions.concat(displayPositions, loop ?? []);
+      orbitBounds.set(snapshot.target.key, displayPositions.concat(loop ?? []));
+      if (frameBasis.length === 0) frameBasis = loop ?? displayPositions;
       const trajectoryRoot = viewer.entities.add({ id: `prediction-${snapshot.target.key}`, name: snapshot.target.name });
       trajectoryRoots.push(trajectoryRoot);
       trajectoryLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, polyline: {
-        positions, width: 1.3, arcType: ArcType.NONE,
-        clampToGround: false, material: color.withAlpha(0.4),
+        positions: displayPositions, width: visibility ? 0.8 : 1.2, arcType: ArcType.NONE,
+        clampToGround: false, material: visibility
+          ? Color.fromCssColorString('#93A0AE').withAlpha(0.5) : color.withAlpha(0.55),
       } }));
+      const colouredSegments = orbitView
+        ? orbitView.aboveThresholdSegments.map(segment => segment.positionsM.map(position => new Cartesian3(...position)))
+        : (visibility?.aboveThresholdSegments.map(segment => segment.samples.map(sample => new Cartesian3(...sample.positionEcefM))) ?? []);
+      for (const segment of colouredSegments) {
+        trajectoryLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, polyline: {
+          positions: segment,
+          width: 2.4, arcType: ArcType.NONE, clampToGround: false, material: color.withAlpha(0.95),
+        } }));
+      }
       if (loop) referenceLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showReference, polyline: {
         positions: loop, width: 2.2, arcType: ArcType.NONE, clampToGround: false, material: color,
       } }));
@@ -201,9 +238,13 @@ async function start() {
           style: LabelStyle.FILL_AND_OUTLINE, outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 3,
           horizontalOrigin: HorizontalOrigin.LEFT, pixelOffset: new Cartesian2(14, -14) },
       });
-      endMarkers.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, position: positions.at(-1)!,
-        point: { pixelSize: 5, color: Color.fromCssColorString('#9BB1CA'), outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 1 },
-      }));
+      if (!orbitView) endMarkers.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, position: positions.at(-1)!,
+          point: { pixelSize: 5, color: Color.fromCssColorString('#93A0AE'), outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 1 },
+          label: { text: trajectoryDurationLabel(snapshot.epochUtc, snapshot.trajectory.samples.at(-1)!.epochUtc),
+            font: '11px sans-serif', fillColor: Color.fromCssColorString('#AAB6C3'), style: LabelStyle.FILL_AND_OUTLINE,
+            outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 3,
+            horizontalOrigin: HorizontalOrigin.LEFT, pixelOffset: new Cartesian2(9, -7) },
+        }));
       }
       const snapshot = snapshots[0];
       observerLayer.setOrbitPositions(trajectoryPositions);
@@ -220,13 +261,15 @@ async function start() {
       period.title = `CPF trails: ${snapshot.epochUtc} to ${snapshot.trajectory.samples.at(-1)!.epochUtc}`;
       const caption = document.createElement('span');
       caption.className = 'snapshot-caption';
-      caption.textContent = 'Closed loops: approximate two-body geometry';
+      caption.textContent = snapshot.trajectory.visibility
+        ? `Frozen one-revolution CPF orbit · thin grey below ${snapshot.trajectory.visibility.observer.minElevationDeg}° · colour when visible`
+        : 'Closed loops: approximate two-body geometry';
       const legend = document.createElement('span');
       legend.className = 'snapshot-caption';
       for (const target of snapshots) {
         const entry = document.createElement('span');
         entry.textContent = `● ${target.target.name}  `;
-        entry.style.color = palette[target.target.key] ?? '#E4B76F';
+        entry.style.color = targetColor(target.target.key).toCssColorString();
         legend.append(entry);
       }
       previewPanel.replaceChildren(heading, period, caption, legend);
@@ -257,7 +300,7 @@ async function start() {
         activeBounds.push(...(orbitBounds.get(target.key) ?? [new Cartesian3(...target.positionEcefM!)]));
         if (!root) { root = viewer.entities.add({ id: `prediction-${target.key}`, name: target.name }); trajectoryRoots.push(root); }
         root.show = true;
-        const color = Color.fromCssColorString(palette[target.key] ?? '#E4B76F');
+        const color = targetColor(target.key);
         let marker = viewer.entities.getById(`marker-${target.key}`);
         if (!marker) marker = viewer.entities.add({ id: `marker-${target.key}`, parent: root,
           point: { pixelSize: 8, color, outlineColor: Color.BLACK, outlineWidth: 2 },
@@ -267,7 +310,7 @@ async function start() {
         marker.position = new ConstantPositionProperty(new Cartesian3(...target.positionEcefM!));
         if (marker.label) marker.label.text = new ConstantProperty(`${target.name} · ${target.look!.elevationDeg.toFixed(1)}°`);
         if (marker.point) marker.point.color = new ConstantProperty(target.look!.aboveThreshold ? Color.fromCssColorString('#88E5A5') : Color.fromCssColorString('#8490A2'));
-        if (marker.label) marker.label.fillColor = new ConstantProperty(target.look!.aboveThreshold ? Color.fromCssColorString('#88E5A5') : color.withAlpha(0.7));
+        if (marker.label) marker.label.fillColor = new ConstantProperty(target.look!.aboveThreshold ? Color.fromCssColorString('#88E5A5') : Color.fromCssColorString('#8490A2'));
       }
       observerLayer.setOrbitPositions(activeBounds);
       liveEpochMs = Date.parse(frame.epochUtc);
@@ -279,7 +322,10 @@ async function start() {
       epoch.textContent = `${frame.epochUtc.replace('T', ' ').replace('Z', ' UTC')} · 1 s updates`;
       const caption = document.createElement('span');
       caption.className = 'snapshot-caption';
-      caption.textContent = `Green marker: ≥ ${frame.observer.minElevationDeg}° · Closed loops: approximate reference geometry`;
+      const intervalSummary = visibleIntervalCount
+        ? `${visibleIntervalCount} predicted visible interval${visibleIntervalCount === 1 ? '' : 's'}`
+        : 'no visible interval in displayed horizon';
+      caption.textContent = `Frozen one-revolution CPF orbit · grey below ${frame.observer.minElevationDeg}° · colour at/above · ${intervalSummary}`;
       previewPanel.replaceChildren(heading, epoch, caption);
       previewPanel.dataset.liveEpoch = frame.epochUtc;
       previewPanel.hidden = false;
@@ -312,8 +358,8 @@ async function start() {
       case 'set-trajectories': loadTrajectory(event.data.snapshots, event.data.requestId); break;
       case 'clear-trajectory': clearTrajectory(); break;
       case 'trajectory-view': frameTrajectory(); break;
-      case 'trajectory-on': showTrajectory = true; for (const line of [...trajectoryLines, ...endMarkers]) line.show = true; viewer.scene.requestRender(); break;
-      case 'trajectory-off': showTrajectory = false; for (const line of [...trajectoryLines, ...endMarkers]) line.show = false; viewer.scene.requestRender(); break;
+      case 'trajectory-on': showTrajectory = true; previewPanel.dataset.trajectoryVisible = 'true'; for (const line of [...trajectoryLines, ...endMarkers]) line.show = true; viewer.scene.requestRender(); break;
+      case 'trajectory-off': showTrajectory = false; previewPanel.dataset.trajectoryVisible = 'false'; for (const line of [...trajectoryLines, ...endMarkers]) line.show = false; viewer.scene.requestRender(); break;
       case 'reference-on': showReference = true; for (const line of referenceLines) line.show = true; viewer.scene.requestRender(); break;
       case 'reference-off': showReference = false; for (const line of referenceLines) line.show = false; viewer.scene.requestRender(); break;
     }

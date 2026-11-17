@@ -58,6 +58,7 @@ if (nativeBridge) {
         <label>Minimum elevation ° <input id="observer-elevation" type="number" step="0.5" value="10"></label>
       </div>
       <div class="actions"><button id="global-view">Global view</button><button id="observer-view">Observer view</button></div>
+      <label class="check"><input id="trajectory-toggle" type="checkbox" checked> CPF trajectory and visibility</label>
       <label class="check"><input id="grid-toggle" type="checkbox"> Latitude / longitude grid</label>
     </section>
     <footer><strong id="live-badge">LIVE CPF · STARTING</strong><span id="live-status">Preparing globe…</span></footer>`;
@@ -69,11 +70,34 @@ if (nativeBridge) {
   const search = byId<HTMLInputElement>('target-search');
   const status = byId<HTMLSpanElement>('live-status');
   const badge = byId<HTMLElement>('live-badge');
+  const startupResponse = await fetch('/startup.json', { cache: 'no-store' });
+  if (!startupResponse.ok) throw new Error('Globe startup configuration is unavailable.');
+  const startup = await startupResponse.json() as {
+    observer: { name: string; latitudeDeg: number; longitudeDeg: number;
+      ellipsoidalHeightM: number; minElevationDeg: number } | null;
+    initialTargets: string[]; overrideSavedTargets: boolean;
+  };
+  if (!Array.isArray(startup.initialTargets) || !startup.initialTargets.every(key => typeof key === 'string') ||
+      typeof startup.overrideSavedTargets !== 'boolean') throw new Error('Invalid globe startup configuration.');
+  if (startup.observer) {
+    const values = [startup.observer.latitudeDeg, startup.observer.longitudeDeg,
+      startup.observer.ellipsoidalHeightM, startup.observer.minElevationDeg];
+    if (typeof startup.observer.name !== 'string' || !startup.observer.name || !values.every(Number.isFinite))
+      throw new Error('Invalid startup observatory.');
+    byId<HTMLInputElement>('observer-name').value = startup.observer.name;
+    byId<HTMLInputElement>('observer-lat').value = String(startup.observer.latitudeDeg);
+    byId<HTMLInputElement>('observer-lon').value = String(startup.observer.longitudeDeg);
+    byId<HTMLInputElement>('observer-height').value = String(startup.observer.ellipsoidalHeightM);
+    byId<HTMLInputElement>('observer-elevation').value = String(startup.observer.minElevationDeg);
+  }
   let targets: Target[] = [];
   const saved = JSON.parse(localStorage.getItem('arctra-selected-targets-v1') ?? '[]');
-  const selected = new Set<string>(Array.isArray(saved) ? saved : []);
+  const selected = new Set<string>(startup.overrideSavedTargets
+    ? startup.initialTargets : (Array.isArray(saved) ? saved : []));
   let rendererReady = false;
   let polling = false;
+  let trajectoriesNeeded = true;
+  let liveGeneration = 0;
 
   const observer = () => ({
     name: byId<HTMLInputElement>('observer-name').value.trim() || 'Observer',
@@ -108,22 +132,27 @@ if (nativeBridge) {
 
   function beginLive() {
     if (!rendererReady) return;
+    liveGeneration++;
     const keys = targets.filter(target => selected.has(target.key)).map(target => target.key);
     send({ command: 'begin-live', keys });
     send({ command: 'set-observer', observer: observer() });
+    trajectoriesNeeded = true;
     count.textContent = `${targets.length} targets · ${keys.length} selected`;
   }
 
   async function poll() {
     if (polling || !rendererReady) return;
     polling = true;
+    const requestGeneration = liveGeneration;
     const chosen = targets.filter(target => selected.has(target.key));
     try {
       const response = await fetch('/api/live', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schemaVersion: 1, observer: observer(), targets: chosen }) });
+        body: JSON.stringify({ schemaVersion: 1, observer: observer(), targets: chosen,
+          includeTrajectories: trajectoriesNeeded }) });
       const frame = await response.json();
       if (!response.ok || frame.ok !== true) throw new Error(frame.error ?? `HTTP ${response.status}`);
       send({ command: 'live-frame', frame });
+      if (requestGeneration === liveGeneration && Array.isArray(frame.snapshots)) trajectoriesNeeded = false;
       const ready = frame.targets.filter((target: { state: string }) => target.state === 'ready').length;
       badge.textContent = `LIVE CPF · ${ready}/${chosen.length}`;
       status.textContent = `${frame.epochUtc.replace('T', ' ').replace('Z', ' UTC')} · instantaneous geometric CPF`;
@@ -134,7 +163,11 @@ if (nativeBridge) {
   }
 
   onRendererStatus = message => {
-    if (message.type === 'ready') { rendererReady = true; beginLive(); void poll(); }
+    if (message.type === 'ready') {
+      rendererReady = true;
+      send({ command: byId<HTMLInputElement>('trajectory-toggle').checked ? 'trajectory-on' : 'trajectory-off' });
+      beginLive(); void poll();
+    }
     if (message.type === 'live-error') status.textContent = String(message.message ?? 'Renderer rejected live state');
   };
   search.addEventListener('input', renderTargets);
@@ -142,6 +175,8 @@ if (nativeBridge) {
     byId<HTMLInputElement>(id).addEventListener('change', beginLive);
   byId<HTMLButtonElement>('global-view').addEventListener('click', () => send({ command: 'global' }));
   byId<HTMLButtonElement>('observer-view').addEventListener('click', () => send({ command: 'observer' }));
+  byId<HTMLInputElement>('trajectory-toggle').addEventListener('change', event =>
+    send({ command: (event.currentTarget as HTMLInputElement).checked ? 'trajectory-on' : 'trajectory-off' }));
   byId<HTMLInputElement>('grid-toggle').addEventListener('change', event =>
     send({ command: (event.currentTarget as HTMLInputElement).checked ? 'grid-on' : 'grid-off' }));
 

@@ -10,10 +10,19 @@ export interface TrajectorySnapshot {
   epochUtc: string;
   target: { key: string; name: string; noradId: number; ilrsId: number };
   cpf: { provider: string; filename: string; sourceUrl: string; retrievedAtUtc: string; referenceFrame: 0; usableStartUtc: string; usableEndUtc: string };
-  trajectory: { sampleStepSeconds: number; samples: { epochUtc: string; positionEcefM: [number, number, number] }[] };
+  trajectory: { sampleStepSeconds: number; samples: TrajectorySample[]; visibility?: {
+    observer: { latitudeDeg: number; longitudeDeg: number; ellipsoidalHeightM: number; minElevationDeg: number };
+    endReason: 'visible-pass-complete' | 'display-cap' | 'cpf-coverage' | 'data-gap';
+    aboveThresholdSegments: { samples: TrajectorySample[] }[];
+  }; orbitView?: {
+    model: 'cpf-nominal-earth-rotation'; referenceEpochUtc: string; estimatedPeriodSeconds: number;
+    positionsM: [number, number, number][];
+    aboveThresholdSegments: { positionsM: [number, number, number][] }[];
+  } };
   referenceOrbit?: { model: 'approximate-two-body'; frame: 'epoch-frozen-terrestrial'; epochUtc: string;
     semiMajorAxisM: number; eccentricity: number; periodSeconds: number; positionsM: [number, number, number][] };
 }
+interface TrajectorySample { epochUtc: string; positionEcefM: [number, number, number] }
 const ajv = new Ajv({ strict: true });
 addFormats(ajv);
 const validateSchema = ajv.compile<TrajectorySnapshot>(schema);
@@ -36,6 +45,29 @@ export function validateSnapshot(value: unknown): TrajectorySnapshot {
   }
   if (value.epochUtc !== value.trajectory.samples[0].epochUtc)
     throw new Error('Preview marker must use the first supplied sample epoch.');
+  if (value.trajectory.visibility) {
+    const pathStart = Date.parse(value.trajectory.samples[0].epochUtc);
+    const pathEnd = Date.parse(value.trajectory.samples.at(-1)!.epochUtc);
+    for (const segment of value.trajectory.visibility.aboveThresholdSegments) {
+      let segmentPrevious: number | undefined;
+      for (const sample of segment.samples) {
+        const epoch = Date.parse(sample.epochUtc);
+        if (epoch < pathStart || epoch > pathEnd || (segmentPrevious !== undefined && epoch <= segmentPrevious))
+          throw new Error('Visibility segment is unordered or outside the trajectory.');
+        if (!sample.positionEcefM.every(Number.isFinite) || Math.hypot(...sample.positionEcefM) < 6_300_000)
+          throw new Error('Invalid visibility-segment ECEF position.');
+        segmentPrevious = epoch;
+      }
+    }
+  }
+  if (value.trajectory.orbitView) {
+    const view = value.trajectory.orbitView;
+    if (view.referenceEpochUtc !== value.epochUtc ||
+        view.positionsM.some(position => !position.every(Number.isFinite) || Math.hypot(...position) < 6_300_000) ||
+        view.aboveThresholdSegments.some(segment => segment.positionsM.some(position =>
+          !position.every(Number.isFinite) || Math.hypot(...position) < 6_300_000)))
+      throw new Error('Invalid epoch-frozen CPF orbit view.');
+  }
   if (value.referenceOrbit) {
     const orbit = value.referenceOrbit;
     const points = orbit.positionsM;

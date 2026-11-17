@@ -38,6 +38,12 @@ struct TrackOptions {
     std::string observatory_file;
 };
 
+struct GlobeOptions {
+    std::vector<arctra::Satellite> satellites;
+    std::optional<std::string> observatory_file;
+    bool override_saved_targets{};
+};
+
 constexpr std::string_view priority_satellite_file{"priorities.sat"};
 // constexpr std::string_view priority_satellite_file{"sat.pri"};
 
@@ -52,7 +58,7 @@ void print_usage(std::ostream& output)
               "--observatory FILE [--dur HOURS[h]]\n\n"
            << "  arctra track [--pri] [--satellite NAME[,NAME...] | --sat-file FILE] "
               "--observatory FILE\n\n"
-           << "  arctra globe\n\n"
+           << "  arctra globe [--observatory FILE] [--pri]\n\n"
            << "Example:\n  arctra predict --satellite lageos1,lageos2,etalon1 "
               "--observatory nyal.ini --dur 24h\n"
            << "  arctra predict --sat-file targets.txt --observatory nyal.ini --dur 24h\n"
@@ -166,6 +172,24 @@ TrackOptions parse_track_options(const int argc, char* argv[],
     }
     if (options.observatory_file.empty()) {
         throw std::invalid_argument("--observatory is required");
+    }
+    return options;
+}
+
+GlobeOptions parse_globe_options(const int argc, char* argv[],
+                                 const arctra::SatelliteCatalog& catalog) {
+    GlobeOptions options;
+    for (int index = 2; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--observatory") {
+            options.observatory_file = std::string{require_value(argc, argv, index, argument)};
+        } else if (argument == "--pri") {
+            options.override_saved_targets = true;
+            arctra::append_satellites_from_file(options.satellites, catalog,
+                                                std::string{priority_satellite_file});
+        } else {
+            throw std::invalid_argument("unknown option: " + std::string{argument});
+        }
     }
     return options;
 }
@@ -334,8 +358,14 @@ int main(const int argc, char* argv[])
             auto options = parse_track_options(argc, argv, catalog);
             return run_track(options, catalog);
         }
-        if (argc == 2 && std::string_view{argv[1]} == "globe") {
-            return arctra::run_globe();
+        if (std::string_view{argv[1]} == "globe") {
+            const auto options = parse_globe_options(argc, argv, catalog);
+            std::optional<arctra::Observatory> observatory;
+            if (options.observatory_file) {
+                observatory = arctra::load_observatory_ini(*options.observatory_file);
+            }
+            return arctra::run_globe(observatory, options.satellites,
+                                     options.override_saved_targets);
         }
         print_usage(std::cerr);
         return EXIT_FAILURE;

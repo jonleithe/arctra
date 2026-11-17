@@ -147,11 +147,13 @@ export class ObserverLayer {
       const extent = this.orbitPositions.reduce((maximum, position) => Math.max(maximum, Cartesian3.distance(origin, position) * 1.08), half);
       const ring = elevationConeRing(minimum, extent);
       const coneRoot = this.viewer.entities.add({ id: 'observer-elevation-limit', parent: root });
-      const boundaryColor = Color.fromCssColorString('#EBC18A');
+      // Keep the observer threshold visually distinct from target-specific
+      // trajectory colours. It is a local geometric boundary, not an orbit.
+      const boundaryColor = Color.fromCssColorString('#9AABBE');
       const boundary = Math.abs(minimum) >= 89.999 ? [origin, Matrix4.multiplyByPoint(frame, ring[0], new Cartesian3())]
         : ring.map(position => Matrix4.multiplyByPoint(frame, position, new Cartesian3()));
       this.viewer.entities.add({ parent: coneRoot, polyline: { positions: boundary,
-        arcType: ArcType.NONE, clampToGround: false, width: 1.5, material: boundaryColor.withAlpha(0.7) } });
+        arcType: ArcType.NONE, clampToGround: false, width: 1.25, material: boundaryColor.withAlpha(0.55) } });
       if (Math.abs(minimum) > 0.001 && Math.abs(minimum) < 89.999) {
         const positions = new Float64Array((ring.length + 1) * 3);
         const indices: number[] = [];
@@ -164,7 +166,7 @@ export class ObserverLayer {
         const geometry = new Geometry({ attributes,
           indices: new Uint16Array(indices), primitiveType: PrimitiveType.TRIANGLES, boundingSphere: BoundingSphere.fromVertices(positions) });
         this.conePrimitive = this.viewer.scene.primitives.add(new Primitive({ asynchronous: false,
-          geometryInstances: new GeometryInstance({ geometry, modelMatrix: frame, attributes: { color: ColorGeometryInstanceAttribute.fromColor(boundaryColor.withAlpha(0.055)) } }),
+          geometryInstances: new GeometryInstance({ geometry, modelMatrix: frame, attributes: { color: ColorGeometryInstanceAttribute.fromColor(boundaryColor.withAlpha(0.035)) } }),
           appearance: new PerInstanceColorAppearance({ flat: true, translucent: true, closed: false }),
         }));
       }

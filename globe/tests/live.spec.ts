@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { validateLiveFrame } from '../src/live';
+import { readFileSync } from 'node:fs';
 
 const epoch = '2026-11-16T10:00:00Z';
 const now = Date.parse(epoch);
+const snapshot = JSON.parse(readFileSync(new URL('../fixtures/lageos1-trajectory-v1.json', import.meta.url), 'utf8'));
 const valid = () => ({ schemaVersion: 1, ok: true, epochUtc: epoch,
   observer: { latitudeDeg: 78.923, longitudeDeg: 11.923, ellipsoidalHeightM: 0, minElevationDeg: 0 }, targets: [{
   key: 'lageos1', name: 'LAGEOS-1', state: 'ready', positionEcefM: [12_000_000, 0, 0],
@@ -24,6 +26,17 @@ test('live frames require fresh epochs, valid CPF coverage and authoritative geo
   expect(() => validateLiveFrame(wrongLimit, now)).toThrow();
   wrongLimit.targets[0].look.aboveThreshold = false;
   expect(validateLiveFrame(wrongLimit, now).targets[0].look!.aboveThreshold).toBe(false);
+
+  const withTrajectory: any = valid();
+  const classified = structuredClone(snapshot);
+  classified.trajectory.visibility = {
+    observer: { ...withTrajectory.observer }, endReason: 'visible-pass-complete',
+    aboveThresholdSegments: [{ samples: classified.trajectory.samples.slice(5, 10) }],
+  };
+  withTrajectory.snapshots = [classified];
+  expect(validateLiveFrame(withTrajectory, now).snapshots).toHaveLength(1);
+  classified.trajectory.visibility.observer.minElevationDeg = 12.5;
+  expect(() => validateLiveFrame(withTrajectory, now)).toThrow(/different observer/);
 });
 
 test('one-second live frames render independently of geometry and fail closed on interruption', async ({ page }) => {
@@ -36,12 +49,15 @@ test('one-second live frames render independently of geometry and fail closed on
   });
   await page.goto('http://127.0.0.1:4173');
   await page.waitForFunction(() => (window as any).testBridge.messages.some((message: any) => message.type === 'ready'));
+  const pausedMs = await page.evaluate(() => Date.now() + 60_000);
+  await page.clock.pauseAt(new Date(pausedMs));
   await page.evaluate(() => (window as any).testBridge.receive({ data: { command: 'begin-live', keys: ['lageos1'] } }));
   const first = valid();
+  first.epochUtc = new Date(Math.floor(pausedMs / 1000) * 1000).toISOString();
   await page.evaluate(frame => (window as any).testBridge.receive({ data: { command: 'live-frame', frame } }), first);
-  await expect(page.locator('#trajectory-info')).toHaveAttribute('data-live-epoch', epoch);
+  await expect(page.locator('#trajectory-info')).toHaveAttribute('data-live-epoch', first.epochUtc);
   await page.clock.runFor(1000);
-  const next = valid(); next.epochUtc = '2026-11-16T10:00:01Z'; next.targets[0].positionEcefM = [12_000_000, 5000, 0];
+  const next = valid(); next.epochUtc = new Date(Date.parse(first.epochUtc) + 1000).toISOString(); next.targets[0].positionEcefM = [12_000_000, 5000, 0];
   await page.evaluate(frame => (window as any).testBridge.receive({ data: { command: 'live-frame', frame } }), next);
   await expect(page.locator('#trajectory-info')).toHaveAttribute('data-live-epoch', next.epochUtc);
   await expect(page.locator('#trajectory-info')).toContainText('1 of 1 ready');
