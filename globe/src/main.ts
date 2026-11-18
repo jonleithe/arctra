@@ -2,12 +2,13 @@ import {
   Viewer, Cartesian3, Color, Math as CesiumMath, TileMapServiceImageryProvider,
   buildModuleUrl, ImageryLayer, EllipsoidTerrainProvider,
   Cartesian2,
-  ArcType, Entity, DirectionalLight,
+  ArcType, CallbackPositionProperty, CallbackProperty, Entity, DirectionalLight, Matrix3, Matrix4,
   LabelStyle, HorizontalOrigin, PerspectiveFrustum, ConstantPositionProperty, ConstantProperty,
 } from 'cesium';
 import { validateSnapshot } from './snapshot';
 import { ObserverLayer } from './observer';
 import { validateLiveFrame, maximumLiveAgeMs } from './live';
+import { ecefToEpochFrozen, epochFrozenToEcef, nominalEarthRotationAngle } from './inertial-view';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import './style.css';
 
@@ -113,6 +114,77 @@ async function start() {
   let liveReceivedMs = 0;
   let liveKeys = new Set<string>();
   const liveExpiry = new Map<string, number>();
+  // The reference axes are fixed at the first trajectory's epoch.  The camera
+  // and CPF paths use these axes; Cesium's globe and station entities remain
+  // Earth-fixed and consequently rotate beneath them.
+  let inertialReferenceEpochMs = 0;
+  let displayedEpochMs = 0;
+
+  function frozenToFixedMatrix(result = new Matrix4()) {
+    const angle = nominalEarthRotationAngle(inertialReferenceEpochMs, displayedEpochMs);
+    return Matrix4.fromRotationTranslation(Matrix3.fromRotationZ(-angle), Cartesian3.ZERO, result);
+  }
+
+  function setInertialCameraFrame() {
+    if (!inertialReferenceEpochMs || !displayedEpochMs) return;
+    // Camera._setTransform (used by lookAtTransform) preserves a world-fixed
+    // pose.  Preserve the old *local* pose instead, so mouse navigation stays
+    // in the frozen orbit frame while the Earth spins beneath it.
+    const position = Cartesian3.clone(viewer.camera.position);
+    const direction = Cartesian3.clone(viewer.camera.direction);
+    const up = Cartesian3.clone(viewer.camera.up);
+    viewer.camera.lookAtTransform(frozenToFixedMatrix());
+    Cartesian3.clone(position, viewer.camera.position);
+    Cartesian3.clone(direction, viewer.camera.direction);
+    Cartesian3.clone(up, viewer.camera.up);
+    Cartesian3.normalize(Cartesian3.cross(viewer.camera.direction, viewer.camera.up, viewer.camera.right), viewer.camera.right);
+  }
+
+  function updateDisplayedEpoch(epochMs: number) {
+    if (!Number.isFinite(epochMs)) return;
+    displayedEpochMs = epochMs;
+    setInertialCameraFrame();
+    viewer.scene.requestRender();
+  }
+
+  function frozenPositionProperty(positions: readonly Cartesian3[], referenceEpochMs: number) {
+    return new CallbackProperty(() => positions.map(position => {
+      const [x, y, z] = epochFrozenToEcef([position.x, position.y, position.z], referenceEpochMs, displayedEpochMs || referenceEpochMs);
+      return new Cartesian3(x, y, z);
+    }), false);
+  }
+
+  function frozenPointProperty(position: Cartesian3, referenceEpochMs: number) {
+    return new CallbackPositionProperty((_time, result) => {
+      const [x, y, z] = epochFrozenToEcef([position.x, position.y, position.z], referenceEpochMs, displayedEpochMs || referenceEpochMs);
+      return Cartesian3.fromElements(x, y, z, result);
+    }, false);
+  }
+
+  function frozenPositionsFromSamples(snapshot: ReturnType<typeof validateSnapshot>) {
+    const referenceEpochMs = Date.parse(snapshot.epochUtc);
+    const orbitView = snapshot.trajectory.orbitView;
+    if (orbitView) {
+      return {
+        referenceEpochMs: Date.parse(orbitView.referenceEpochUtc),
+        positions: orbitView.positionsM.map(position => new Cartesian3(...position)),
+        segments: orbitView.aboveThresholdSegments.map(segment =>
+          segment.positionsM.map(position => new Cartesian3(...position))),
+      };
+    }
+    return {
+      referenceEpochMs,
+      positions: snapshot.trajectory.samples.map(sample => {
+        const [x, y, z] = ecefToEpochFrozen(sample.positionEcefM, referenceEpochMs, Date.parse(sample.epochUtc));
+        return new Cartesian3(x, y, z);
+      }),
+      segments: (snapshot.trajectory.visibility?.aboveThresholdSegments ?? []).map(segment =>
+        segment.samples.map(sample => {
+          const [x, y, z] = ecefToEpochFrozen(sample.positionEcefM, referenceEpochMs, Date.parse(sample.epochUtc));
+          return new Cartesian3(x, y, z);
+        })),
+    };
+  }
   const palette: Record<string, string> = {
     lageos1: '#F2B84B', lageos2: '#55C7F2', etalon1: '#E783D5', etalon2: '#A8D85C',
     lares: '#B49BE8', lares2: '#78D3B0',
@@ -165,6 +237,8 @@ async function start() {
     trajectoryPositions = [];
     frameBasis = [];
     visibleIntervalCount = 0;
+    inertialReferenceEpochMs = 0;
+    displayedEpochMs = 0;
     orbitBounds.clear();
     observerLayer.setOrbitPositions([]);
     previewPanel.hidden = true;
@@ -204,9 +278,12 @@ async function start() {
           snapshot.trajectory.visibility?.aboveThresholdSegments.length ?? 0), 0);
       for (const snapshot of snapshots) {
       const positions = snapshot.trajectory.samples.map(sample => new Cartesian3(...sample.positionEcefM));
-      const orbitView = snapshot.trajectory.orbitView;
-      const displayPositions = orbitView
-        ? orbitView.positionsM.map(position => new Cartesian3(...position)) : positions;
+      const frozen = frozenPositionsFromSamples(snapshot);
+      if (!inertialReferenceEpochMs) inertialReferenceEpochMs = frozen.referenceEpochMs;
+      if (frozen.referenceEpochMs !== inertialReferenceEpochMs)
+        throw new Error('Selected CPF trajectories do not share one inertial reference epoch.');
+      if (!displayedEpochMs) displayedEpochMs = inertialReferenceEpochMs;
+      const displayPositions = frozen.positions;
       const loop = snapshot.referenceOrbit?.positionsM.map(position => new Cartesian3(...position));
       const color = targetColor(snapshot.target.key);
       const visibility = snapshot.trajectory.visibility;
@@ -216,21 +293,19 @@ async function start() {
       const trajectoryRoot = viewer.entities.add({ id: `prediction-${snapshot.target.key}`, name: snapshot.target.name });
       trajectoryRoots.push(trajectoryRoot);
       trajectoryLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, polyline: {
-        positions: displayPositions, width: visibility ? 0.8 : 1.2, arcType: ArcType.NONE,
+        positions: frozenPositionProperty(displayPositions, frozen.referenceEpochMs), width: visibility ? 0.8 : 1.2, arcType: ArcType.NONE,
         clampToGround: false, material: visibility
           ? Color.fromCssColorString('#93A0AE').withAlpha(0.5) : color.withAlpha(0.55),
       } }));
-      const colouredSegments = orbitView
-        ? orbitView.aboveThresholdSegments.map(segment => segment.positionsM.map(position => new Cartesian3(...position)))
-        : (visibility?.aboveThresholdSegments.map(segment => segment.samples.map(sample => new Cartesian3(...sample.positionEcefM))) ?? []);
+      const colouredSegments = frozen.segments;
       for (const segment of colouredSegments) {
         trajectoryLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, polyline: {
-          positions: segment,
+          positions: frozenPositionProperty(segment, frozen.referenceEpochMs),
           width: 2.4, arcType: ArcType.NONE, clampToGround: false, material: color.withAlpha(0.95),
         } }));
       }
       if (loop) referenceLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showReference, polyline: {
-        positions: loop, width: 2.2, arcType: ArcType.NONE, clampToGround: false, material: color,
+        positions: frozenPositionProperty(loop, frozen.referenceEpochMs), width: 2.2, arcType: ArcType.NONE, clampToGround: false, material: color,
       } }));
       viewer.entities.add({ id: `marker-${snapshot.target.key}`, parent: trajectoryRoot, position: positions[0],
         point: { pixelSize: 8, color, outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 2 },
@@ -238,7 +313,7 @@ async function start() {
           style: LabelStyle.FILL_AND_OUTLINE, outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 3,
           horizontalOrigin: HorizontalOrigin.LEFT, pixelOffset: new Cartesian2(14, -14) },
       });
-      if (!orbitView) endMarkers.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, position: positions.at(-1)!,
+      if (!snapshot.trajectory.orbitView) endMarkers.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, position: frozenPointProperty(displayPositions.at(-1)!, frozen.referenceEpochMs),
           point: { pixelSize: 5, color: Color.fromCssColorString('#93A0AE'), outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 1 },
           label: { text: trajectoryDurationLabel(snapshot.epochUtc, snapshot.trajectory.samples.at(-1)!.epochUtc),
             font: '11px sans-serif', fillColor: Color.fromCssColorString('#AAB6C3'), style: LabelStyle.FILL_AND_OUTLINE,
@@ -262,7 +337,7 @@ async function start() {
       const caption = document.createElement('span');
       caption.className = 'snapshot-caption';
       caption.textContent = snapshot.trajectory.visibility
-        ? `Frozen one-revolution CPF orbit · thin grey below ${snapshot.trajectory.visibility.observer.minElevationDeg}° · colour when visible`
+        ? `Inertial CPF orbit view · rotating Earth · thin grey below ${snapshot.trajectory.visibility.observer.minElevationDeg}° · colour when visible`
         : 'Closed loops: approximate two-body geometry';
       const legend = document.createElement('span');
       legend.className = 'snapshot-caption';
@@ -274,6 +349,7 @@ async function start() {
       }
       previewPanel.replaceChildren(heading, period, caption, legend);
       previewPanel.hidden = false;
+      setInertialCameraFrame();
       viewer.scene.requestRender();
       report({ type: 'trajectory-loaded', key: snapshot.target.key, keys: snapshots.map(snapshot => snapshot.target.key), sampleCount: snapshots.reduce((total, snapshot) => total + snapshot.trajectory.samples.length, 0), requestId });
     } catch (error) {
@@ -288,6 +364,7 @@ async function start() {
       const frame = validateLiveFrame(value);
       if (!observerLayer.matchesObserver(frame.observer)) return;
       if (frame.targets.length !== liveKeys.size || frame.targets.some(target => !liveKeys.has(target.key))) return;
+      updateDisplayedEpoch(Date.parse(frame.epochUtc));
       if (frame.snapshots) loadTrajectory(frame.snapshots);
       let ready = 0;
       const activeBounds: Cartesian3[] = [];
@@ -325,7 +402,7 @@ async function start() {
       const intervalSummary = visibleIntervalCount
         ? `${visibleIntervalCount} predicted visible interval${visibleIntervalCount === 1 ? '' : 's'}`
         : 'no visible interval in displayed horizon';
-      caption.textContent = `Frozen one-revolution CPF orbit · grey below ${frame.observer.minElevationDeg}° · colour at/above · ${intervalSummary}`;
+      caption.textContent = `Inertial CPF orbit view · Earth rotates beneath paths · grey below ${frame.observer.minElevationDeg}° · colour at/above · ${intervalSummary}`;
       previewPanel.replaceChildren(heading, epoch, caption);
       previewPanel.dataset.liveEpoch = frame.epochUtc;
       previewPanel.hidden = false;

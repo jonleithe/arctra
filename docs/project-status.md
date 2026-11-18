@@ -50,10 +50,12 @@ The authoritative implementation is the current `master` branch; begin with
   ECEF/ENU calculations. This first proof has live markers, catalog selection,
   observer controls, and a toggleable CPF-derived one-revolution orbit. The C++
   worker removes nominal Earth rotation and freezes display axes at the current
-  epoch; this contextual loop approximates UTC as UT1 because CPF supplies no
-  EOP. Visibility remains based on the original Earth-fixed CPF geometry: the
-  loop is thin grey below threshold and coloured only over C++-classified
-  intervals with refined crossings. `globe --observatory FILE --pri` reuses the
+  epoch; the renderer uses the corresponding inverse display rotation so paths
+  and live markers remain coincident while Earth, stations, and grid rotate
+  beneath the freely navigable camera. This contextual loop approximates UTC as
+  UT1 because CPF supplies no EOP. Visibility remains based on the original
+  Earth-fixed CPF geometry: the loop is thin grey below threshold and coloured
+  only over C++-classified intervals with refined crossings. `globe --observatory FILE --pri` reuses the
   validated CLI observatory and priority-file parsers for browser startup.
   Persisted observer profiles and scheduled session refresh are not yet ported.
 - Countdown searches return the first rise/set, stopping at actual position

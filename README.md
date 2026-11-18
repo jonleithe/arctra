@@ -248,16 +248,19 @@ second from validated EDC CPF files; green means at or above the configured
 minimum elevation.
 
 For each ready target, the browser draws one CPF-derived revolution as a thin
-grey loop. The C++ worker removes nominal Earth rotation from the provider's
-frame-0 samples and expresses the orbit in terrestrial axes frozen at the
-current reference epoch. This is contextual visualization: UTC approximates
+grey loop in an inertial-style view. The C++ worker removes nominal Earth
+rotation from the provider's frame-0 samples and freezes the orbit axes at the
+current reference epoch; the browser applies the inverse display rotation to
+the path and camera frame, so the Earth, stations, and grid rotate beneath the
+path while the live CPF marker remains on it. Normal mouse rotate/pan/zoom
+controls remain available. This is contextual visualization: UTC approximates
 UT1 and polar motion is unavailable from CPF alone. Authoritative visibility
 still uses the original Earth-fixed CPF positions and the ordinary topocentric
 calculation. AOS/LOS brackets are bisected to 10 ms and only the corresponding
 parts of the frozen loop receive target-specific colour; below-threshold parts
-remain grey. The browser does not propagate, extrapolate, transform, or
-classify geometry. Trajectories refresh when the selected targets, observer,
-or threshold change, while instantaneous markers update once per second.
+remain grey. The browser does not propagate, extrapolate, or classify
+geometry. Trajectories refresh when the selected targets, observer, or
+threshold change, while instantaneous markers update once per second.
 
 This first Linux proof deliberately omits the Windows application's approximate
 closed reference ellipses, persisted observer profiles and scheduled in-session
