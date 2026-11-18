@@ -4,6 +4,7 @@ import {
   Cartesian2,
   ArcType, CallbackPositionProperty, CallbackProperty, Entity, DirectionalLight, Matrix3, Matrix4,
   LabelStyle, HorizontalOrigin, PerspectiveFrustum, ConstantPositionProperty, ConstantProperty,
+  ScreenSpaceEventType,
 } from 'cesium';
 import { validateSnapshot } from './snapshot';
 import { ObserverLayer } from './observer';
@@ -114,6 +115,27 @@ async function start() {
   let liveReceivedMs = 0;
   let liveKeys = new Set<string>();
   const liveExpiry = new Map<string, number>();
+  const hoverDetails = new Map<string, string>();
+  const hoverInfo = document.createElement('div');
+  hoverInfo.id = 'hover-info';
+  hoverInfo.hidden = true;
+  document.body.append(hoverInfo);
+  viewer.screenSpaceEventHandler.setInputAction((movement: { endPosition: Cartesian2 }) => {
+    const picked = viewer.scene.pick(movement.endPosition) as { id?: Entity } | undefined;
+    const id = picked?.id?.id;
+    const details = id ? hoverDetails.get(id) : undefined;
+    if (!details) {
+      hoverInfo.hidden = true;
+      return;
+    }
+    const canvasBounds = viewer.canvas.getBoundingClientRect();
+    hoverInfo.textContent = details;
+    hoverInfo.hidden = false;
+    hoverInfo.style.left = `${Math.min(canvasBounds.left + movement.endPosition.x + 14,
+      window.innerWidth - hoverInfo.offsetWidth - 8)}px`;
+    hoverInfo.style.top = `${Math.min(canvasBounds.top + movement.endPosition.y + 14,
+      window.innerHeight - hoverInfo.offsetHeight - 8)}px`;
+  }, ScreenSpaceEventType.MOUSE_MOVE);
   // The reference axes are fixed at the first trajectory's epoch.  The camera
   // and CPF paths use these axes; Cesium's globe and station entities remain
   // Earth-fixed and consequently rotate beneath them.
@@ -161,28 +183,37 @@ async function start() {
     }, false);
   }
 
-  function frozenPositionsFromSamples(snapshot: ReturnType<typeof validateSnapshot>) {
+  function displayPositionsFromSamples(snapshot: ReturnType<typeof validateSnapshot>) {
     const referenceEpochMs = Date.parse(snapshot.epochUtc);
     const orbitView = snapshot.trajectory.orbitView;
     if (orbitView) {
       return {
         referenceEpochMs: Date.parse(orbitView.referenceEpochUtc),
+        earthFixed: false,
         positions: orbitView.positionsM.map(position => new Cartesian3(...position)),
-        segments: orbitView.aboveThresholdSegments.map(segment =>
-          segment.positionsM.map(position => new Cartesian3(...position))),
+        segments: orbitView.aboveThresholdSegments.map(segment => ({
+          positions: segment.positionsM.map(position => new Cartesian3(...position)),
+          startIsCrossing: segment.startIsCrossing,
+          endIsCrossing: segment.endIsCrossing,
+          startCrossingUtc: segment.startCrossingUtc,
+          endCrossingUtc: segment.endCrossingUtc,
+        })),
       };
     }
     return {
       referenceEpochMs,
+      earthFixed: false,
       positions: snapshot.trajectory.samples.map(sample => {
         const [x, y, z] = ecefToEpochFrozen(sample.positionEcefM, referenceEpochMs, Date.parse(sample.epochUtc));
         return new Cartesian3(x, y, z);
       }),
-      segments: (snapshot.trajectory.visibility?.aboveThresholdSegments ?? []).map(segment =>
-        segment.samples.map(sample => {
+      segments: (snapshot.trajectory.visibility?.aboveThresholdSegments ?? []).map(segment => ({
+        positions: segment.samples.map(sample => {
           const [x, y, z] = ecefToEpochFrozen(sample.positionEcefM, referenceEpochMs, Date.parse(sample.epochUtc));
           return new Cartesian3(x, y, z);
-        })),
+        }), startIsCrossing: false, endIsCrossing: false,
+        startCrossingUtc: null, endCrossingUtc: null,
+      })),
     };
   }
   const palette: Record<string, string> = {
@@ -240,6 +271,8 @@ async function start() {
     inertialReferenceEpochMs = 0;
     displayedEpochMs = 0;
     orbitBounds.clear();
+    hoverDetails.clear();
+    hoverInfo.hidden = true;
     observerLayer.setOrbitPositions([]);
     previewPanel.hidden = true;
     viewer.scene.requestRender();
@@ -278,12 +311,14 @@ async function start() {
           snapshot.trajectory.visibility?.aboveThresholdSegments.length ?? 0), 0);
       for (const snapshot of snapshots) {
       const positions = snapshot.trajectory.samples.map(sample => new Cartesian3(...sample.positionEcefM));
-      const frozen = frozenPositionsFromSamples(snapshot);
-      if (!inertialReferenceEpochMs) inertialReferenceEpochMs = frozen.referenceEpochMs;
-      if (frozen.referenceEpochMs !== inertialReferenceEpochMs)
-        throw new Error('Selected CPF trajectories do not share one inertial reference epoch.');
-      if (!displayedEpochMs) displayedEpochMs = inertialReferenceEpochMs;
-      const displayPositions = frozen.positions;
+      const display = displayPositionsFromSamples(snapshot);
+      if (!display.earthFixed) {
+        if (!inertialReferenceEpochMs) inertialReferenceEpochMs = display.referenceEpochMs;
+        if (display.referenceEpochMs !== inertialReferenceEpochMs)
+          throw new Error('Selected CPF trajectories do not share one inertial reference epoch.');
+        if (!displayedEpochMs) displayedEpochMs = inertialReferenceEpochMs;
+      }
+      const displayPositions = display.positions;
       const loop = snapshot.referenceOrbit?.positionsM.map(position => new Cartesian3(...position));
       const color = targetColor(snapshot.target.key);
       const visibility = snapshot.trajectory.visibility;
@@ -293,19 +328,33 @@ async function start() {
       const trajectoryRoot = viewer.entities.add({ id: `prediction-${snapshot.target.key}`, name: snapshot.target.name });
       trajectoryRoots.push(trajectoryRoot);
       trajectoryLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, polyline: {
-        positions: frozenPositionProperty(displayPositions, frozen.referenceEpochMs), width: visibility ? 0.8 : 1.2, arcType: ArcType.NONE,
-        clampToGround: false, material: visibility
-          ? Color.fromCssColorString('#93A0AE').withAlpha(0.5) : color.withAlpha(0.55),
+        positions: display.earthFixed ? displayPositions : frozenPositionProperty(displayPositions, display.referenceEpochMs), width: visibility ? 1.2 : 1.4, arcType: ArcType.NONE,
+        clampToGround: false, material: color.withAlpha(visibility ? 0.34 : 0.55),
       } }));
-      const colouredSegments = frozen.segments;
-      for (const segment of colouredSegments) {
+      const colouredSegments = display.segments;
+      for (const [segmentIndex, segment] of colouredSegments.entries()) {
+        const segmentPositions = segment.positions;
         trajectoryLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, polyline: {
-          positions: frozenPositionProperty(segment, frozen.referenceEpochMs),
-          width: 2.4, arcType: ArcType.NONE, clampToGround: false, material: color.withAlpha(0.95),
+          positions: display.earthFixed ? segmentPositions : frozenPositionProperty(segmentPositions, display.referenceEpochMs),
+          width: 2.8, arcType: ArcType.NONE, clampToGround: false, material: color.withAlpha(0.98),
         } }));
+        const crossingPoints = [
+          segment.startIsCrossing ? { point: segmentPositions[0], kind: 'AOS', epoch: segment.startCrossingUtc } : undefined,
+          segment.endIsCrossing ? { point: segmentPositions.at(-1)!, kind: 'LOS', epoch: segment.endCrossingUtc } : undefined,
+        ].filter((crossing): crossing is { point: Cartesian3; kind: string; epoch: string } => crossing?.epoch != null);
+        for (const [crossingIndex, crossing] of crossingPoints.entries()) {
+          const crossingId = `crossing-${snapshot.target.key}-${segmentIndex}-${crossingIndex}`;
+          endMarkers.push(viewer.entities.add({
+          id: crossingId,
+          parent: trajectoryRoot, show: showTrajectory,
+          position: display.earthFixed ? crossing.point : frozenPointProperty(crossing.point, display.referenceEpochMs),
+          point: { pixelSize: 7, color, outlineColor: Color.WHITE.withAlpha(0.9), outlineWidth: 1.5 },
+          }));
+          hoverDetails.set(crossingId, `${snapshot.target.name} · ${crossing.kind} · ${crossing.epoch.replace('T', ' ').replace('Z', ' UTC')}`);
+        }
       }
       if (loop) referenceLines.push(viewer.entities.add({ parent: trajectoryRoot, show: showReference, polyline: {
-        positions: frozenPositionProperty(loop, frozen.referenceEpochMs), width: 2.2, arcType: ArcType.NONE, clampToGround: false, material: color,
+        positions: frozenPositionProperty(loop, display.referenceEpochMs), width: 2.2, arcType: ArcType.NONE, clampToGround: false, material: color,
       } }));
       viewer.entities.add({ id: `marker-${snapshot.target.key}`, parent: trajectoryRoot, position: positions[0],
         point: { pixelSize: 8, color, outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 2 },
@@ -313,7 +362,7 @@ async function start() {
           style: LabelStyle.FILL_AND_OUTLINE, outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 3,
           horizontalOrigin: HorizontalOrigin.LEFT, pixelOffset: new Cartesian2(14, -14) },
       });
-      if (!snapshot.trajectory.orbitView) endMarkers.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, position: frozenPointProperty(displayPositions.at(-1)!, frozen.referenceEpochMs),
+      if (!snapshot.trajectory.orbitView) endMarkers.push(viewer.entities.add({ parent: trajectoryRoot, show: showTrajectory, position: frozenPointProperty(displayPositions.at(-1)!, display.referenceEpochMs),
           point: { pixelSize: 5, color: Color.fromCssColorString('#93A0AE'), outlineColor: Color.fromCssColorString('#080F1B'), outlineWidth: 1 },
           label: { text: trajectoryDurationLabel(snapshot.epochUtc, snapshot.trajectory.samples.at(-1)!.epochUtc),
             font: '11px sans-serif', fillColor: Color.fromCssColorString('#AAB6C3'), style: LabelStyle.FILL_AND_OUTLINE,
@@ -337,7 +386,7 @@ async function start() {
       const caption = document.createElement('span');
       caption.className = 'snapshot-caption';
       caption.textContent = snapshot.trajectory.visibility
-        ? `Inertial CPF orbit view · rotating Earth · thin grey below ${snapshot.trajectory.visibility.observer.minElevationDeg}° · colour when visible`
+        ? `Closed CPF orbit · rotating Earth · muted below ${snapshot.trajectory.visibility.observer.minElevationDeg}° · bright at/above at each segment epoch · hover crossing dots for UTC`
         : 'Closed loops: approximate two-body geometry';
       const legend = document.createElement('span');
       legend.className = 'snapshot-caption';
@@ -386,8 +435,14 @@ async function start() {
         });
         marker.position = new ConstantPositionProperty(new Cartesian3(...target.positionEcefM!));
         if (marker.label) marker.label.text = new ConstantProperty(`${target.name} · ${target.look!.elevationDeg.toFixed(1)}°`);
-        if (marker.point) marker.point.color = new ConstantProperty(target.look!.aboveThreshold ? Color.fromCssColorString('#88E5A5') : Color.fromCssColorString('#8490A2'));
-        if (marker.label) marker.label.fillColor = new ConstantProperty(target.look!.aboveThreshold ? Color.fromCssColorString('#88E5A5') : Color.fromCssColorString('#8490A2'));
+        if (marker.label) marker.label.show = new ConstantProperty(false);
+        if (marker.point) {
+          marker.point.color = new ConstantProperty(color);
+          marker.point.outlineColor = new ConstantProperty(target.look!.aboveThreshold
+            ? Color.fromCssColorString('#D8FFE4') : Color.fromCssColorString('#080F1B'));
+        }
+        hoverDetails.set(`marker-${target.key}`,
+          `${target.name} · Az ${target.look!.azimuthDeg.toFixed(1)}° · El ${target.look!.elevationDeg.toFixed(1)}° · ${(target.look!.slantRangeM / 1000).toFixed(0)} km · ${target.look!.aboveThreshold ? 'above threshold' : 'below threshold'}`);
       }
       observerLayer.setOrbitPositions(activeBounds);
       liveEpochMs = Date.parse(frame.epochUtc);
@@ -402,7 +457,7 @@ async function start() {
       const intervalSummary = visibleIntervalCount
         ? `${visibleIntervalCount} predicted visible interval${visibleIntervalCount === 1 ? '' : 's'}`
         : 'no visible interval in displayed horizon';
-      caption.textContent = `Inertial CPF orbit view · Earth rotates beneath paths · grey below ${frame.observer.minElevationDeg}° · colour at/above · ${intervalSummary}`;
+      caption.textContent = `Closed CPF orbits · Earth rotates inside · muted below ${frame.observer.minElevationDeg}° · bright at/above at each segment epoch · hover targets or crossing dots · ${intervalSummary}`;
       previewPanel.replaceChildren(heading, epoch, caption);
       previewPanel.dataset.liveEpoch = frame.epochUtc;
       previewPanel.hidden = false;

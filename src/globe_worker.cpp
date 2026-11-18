@@ -138,6 +138,9 @@ Json cpf_orbit_view(const LoadedTarget& loaded,
         }
         return evaluate(lower + (upper - lower) / 2);
     };
+    // Draw the contextual orbit in axes frozen at the reference epoch.  Earth
+    // and the observer rotate inside this scene frame; visibility itself is
+    // still classified from the original Earth-fixed position at each epoch.
     const auto coordinates = [](const OrbitPoint& point) {
         return Json::array({point.display[0], point.display[1], point.display[2]});
     };
@@ -145,6 +148,8 @@ Json cpf_orbit_view(const LoadedTarget& loaded,
     Json positions = Json::array();
     Json visible_segments = Json::array();
     Json active_segment = Json::array();
+    bool active_starts_at_crossing = false;
+    std::string active_start_crossing_utc;
     auto previous = evaluate(reference_epoch);
     positions.push_back(coordinates(previous));
     if (previous.above_threshold) active_segment.push_back(coordinates(previous));
@@ -155,12 +160,21 @@ Json cpf_orbit_view(const LoadedTarget& loaded,
             const auto crossing = refine_crossing(previous.epoch, point.epoch, rising);
             if (rising) {
                 active_segment = Json::array({coordinates(crossing)});
+                active_starts_at_crossing = true;
+                active_start_crossing_utc = utc_string_milliseconds(crossing.epoch);
             } else {
                 active_segment.push_back(coordinates(crossing));
                 if (active_segment.size() >= 2) {
-                    visible_segments.push_back({{"positionsM", std::move(active_segment)}});
+                    visible_segments.push_back({{"positionsM", std::move(active_segment)},
+                                                {"startIsCrossing", active_starts_at_crossing},
+                                                {"endIsCrossing", true},
+                                                {"startCrossingUtc", active_starts_at_crossing
+                                                     ? Json{active_start_crossing_utc} : Json{nullptr}},
+                                                {"endCrossingUtc", utc_string_milliseconds(crossing.epoch)}});
                 }
                 active_segment = Json::array();
+                active_starts_at_crossing = false;
+                active_start_crossing_utc.clear();
             }
         }
         positions.push_back(coordinates(point));
@@ -171,22 +185,42 @@ Json cpf_orbit_view(const LoadedTarget& loaded,
     if (final_point.above_threshold != previous.above_threshold) {
         const bool rising = final_point.above_threshold;
         const auto crossing = refine_crossing(previous.epoch, final_point.epoch, rising);
-        if (rising) active_segment = Json::array({coordinates(crossing)});
+        if (rising) {
+            active_segment = Json::array({coordinates(crossing)});
+            active_starts_at_crossing = true;
+            active_start_crossing_utc = utc_string_milliseconds(crossing.epoch);
+        }
         else {
             active_segment.push_back(coordinates(crossing));
             if (active_segment.size() >= 2) {
-                visible_segments.push_back({{"positionsM", std::move(active_segment)}});
+                visible_segments.push_back({{"positionsM", std::move(active_segment)},
+                                            {"startIsCrossing", active_starts_at_crossing},
+                                            {"endIsCrossing", true},
+                                            {"startCrossingUtc", active_starts_at_crossing
+                                                 ? Json{active_start_crossing_utc} : Json{nullptr}},
+                                            {"endCrossingUtc", utc_string_milliseconds(crossing.epoch)}});
             }
             active_segment = Json::array();
+            active_starts_at_crossing = false;
+            active_start_crossing_utc.clear();
         }
     }
     positions.push_back(coordinates(final_point));
+    // This is a contextual one-revolution orbit object, not a second
+    // propagator.  Close it exactly at the live reference position so Cesium
+    // renders the intended complete loop without an artificial visible gap.
+    positions.back() = positions.front();
     if (final_point.above_threshold) active_segment.push_back(coordinates(final_point));
     if (active_segment.size() >= 2) {
-        visible_segments.push_back({{"positionsM", std::move(active_segment)}});
+        visible_segments.push_back({{"positionsM", std::move(active_segment)},
+                                    {"startIsCrossing", active_starts_at_crossing},
+                                    {"endIsCrossing", false},
+                                    {"startCrossingUtc", active_starts_at_crossing
+                                         ? Json{active_start_crossing_utc} : Json{nullptr}},
+                                    {"endCrossingUtc", nullptr}});
     }
 
-    return {{"model", "cpf-nominal-earth-rotation"},
+    return {{"model", "cpf-frozen-closed-orbit"},
             {"referenceEpochUtc", utc_string(reference_epoch)},
             {"estimatedPeriodSeconds", period_seconds},
             {"positionsM", std::move(positions)},

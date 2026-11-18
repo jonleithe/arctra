@@ -103,11 +103,11 @@
           }
         },
         "orbitView": {
-          "description": "One CPF-derived revolution rotated into terrestrial axes frozen at the reference epoch. Uses nominal Earth rotation with UTC approximating UT1; display context only.",
+          "description": "Closed CPF-derived contextual orbit in axes frozen at the reference epoch. Earth-fixed scene objects rotate inside it; visibility remains classified at each crossing epoch.",
           "type": "object", "additionalProperties": false,
           "required": ["model", "referenceEpochUtc", "estimatedPeriodSeconds", "positionsM", "aboveThresholdSegments"],
           "properties": {
-            "model": { "const": "cpf-nominal-earth-rotation" },
+            "model": { "const": "cpf-frozen-closed-orbit" },
             "referenceEpochUtc": { "$ref": "#/definitions/utc" },
             "estimatedPeriodSeconds": { "type": "number", "minimum": 2700, "maximum": 86400 },
             "positionsM": {
@@ -118,8 +118,12 @@
               "type": "array", "maxItems": 100,
               "items": {
                 "type": "object", "additionalProperties": false,
-                "required": ["positionsM"],
+                "required": ["positionsM", "startIsCrossing", "endIsCrossing", "startCrossingUtc", "endCrossingUtc"],
                 "properties": {
+                  "startIsCrossing": { "type": "boolean" },
+                  "endIsCrossing": { "type": "boolean" },
+                  "startCrossingUtc": { "oneOf": [{ "$ref": "#/definitions/utc" }, { "type": "null" }] },
+                  "endCrossingUtc": { "oneOf": [{ "$ref": "#/definitions/utc" }, { "type": "null" }] },
                   "positionsM": {
                     "type": "array", "minItems": 2, "maxItems": 2882,
                     "items": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } }

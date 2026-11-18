@@ -247,20 +247,25 @@ elevation directly in the sidebar. Current markers are evaluated once per
 second from validated EDC CPF files; green means at or above the configured
 minimum elevation.
 
-For each ready target, the browser draws one CPF-derived revolution as a thin
-grey loop in an inertial-style view. The C++ worker removes nominal Earth
-rotation from the provider's frame-0 samples and freezes the orbit axes at the
-current reference epoch; the browser applies the inverse display rotation to
-the path and camera frame, so the Earth, stations, and grid rotate beneath the
-path while the live CPF marker remains on it. Normal mouse rotate/pan/zoom
-controls remain available. This is contextual visualization: UTC approximates
-UT1 and polar motion is unavailable from CPF alone. Authoritative visibility
-still uses the original Earth-fixed CPF positions and the ordinary topocentric
-calculation. AOS/LOS brackets are bisected to 10 ms and only the corresponding
-parts of the frozen loop receive target-specific colour; below-threshold parts
-remain grey. The browser does not propagate, extrapolate, or classify
-geometry. Trajectories refresh when the selected targets, observer, or
-threshold change, while instantaneous markers update once per second.
+For each ready target, the browser draws one CPF-derived revolution as a closed
+orbit in axes frozen at the current reference epoch. The camera moves freely
+around these stationary orbit objects while Earth, the station, grid, and
+minimum-elevation cone rotate inside them. The orbital period is estimated
+after removing nominal Earth rotation, with UTC approximating UT1; the final
+display point is closed exactly onto the reference position because this is a
+contextual orbit loop rather than an independent propagator.
+
+Authoritative visibility is still calculated from the provider's original
+frame-0 Earth-fixed coordinates at every sampled epoch. Below-threshold orbit
+parts retain a muted target colour, while portions classified at or above the
+threshold are brighter and thicker. AOS/LOS brackets are bisected to 10 ms and
+shown as small outlined, time-tagged crossing points. Because Earth rotates,
+future crossing points are not claimed to intersect the cone at its current
+display orientation; hover them to see their UTC epoch. Live target labels are
+also replaced by hover details to avoid obscuring crowded geometry. The browser
+does not propagate, extrapolate, or classify geometry. Orbits refresh when the
+selected targets, observer, or threshold change, while instantaneous markers
+update once per second.
 
 This first Linux proof deliberately omits the Windows application's approximate
 closed reference ellipses, persisted observer profiles and scheduled in-session

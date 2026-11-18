@@ -58,7 +58,7 @@ if (nativeBridge) {
         <label>Minimum elevation ° <input id="observer-elevation" type="number" step="0.5" value="10"></label>
       </div>
       <div class="actions"><button id="global-view">Global view</button><button id="observer-view">Observer view</button></div>
-      <label class="check"><input id="trajectory-toggle" type="checkbox" checked> Inertial CPF trajectory and visibility</label>
+      <label class="check"><input id="trajectory-toggle" type="checkbox" checked> Closed CPF orbits and visibility</label>
       <label class="check"><input id="grid-toggle" type="checkbox"> Latitude / longitude grid</label>
     </section>
     <footer><strong id="live-badge">LIVE CPF · STARTING</strong><span id="live-status">Preparing globe…</span></footer>`;

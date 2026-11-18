@@ -15,9 +15,10 @@ export interface TrajectorySnapshot {
     endReason: 'visible-pass-complete' | 'display-cap' | 'cpf-coverage' | 'data-gap';
     aboveThresholdSegments: { samples: TrajectorySample[] }[];
   }; orbitView?: {
-    model: 'cpf-nominal-earth-rotation'; referenceEpochUtc: string; estimatedPeriodSeconds: number;
+    model: 'cpf-frozen-closed-orbit'; referenceEpochUtc: string; estimatedPeriodSeconds: number;
     positionsM: [number, number, number][];
-    aboveThresholdSegments: { positionsM: [number, number, number][] }[];
+    aboveThresholdSegments: { positionsM: [number, number, number][]; startIsCrossing: boolean; endIsCrossing: boolean;
+      startCrossingUtc: string | null; endCrossingUtc: string | null }[];
   } };
   referenceOrbit?: { model: 'approximate-two-body'; frame: 'epoch-frozen-terrestrial'; epochUtc: string;
     semiMajorAxisM: number; eccentricity: number; periodSeconds: number; positionsM: [number, number, number][] };
@@ -62,11 +63,19 @@ export function validateSnapshot(value: unknown): TrajectorySnapshot {
   }
   if (value.trajectory.orbitView) {
     const view = value.trajectory.orbitView;
+    const first = view.positionsM[0];
+    const last = view.positionsM.at(-1)!;
     if (view.referenceEpochUtc !== value.epochUtc ||
+        first.some((coordinate, index) => coordinate !== last[index]) ||
         view.positionsM.some(position => !position.every(Number.isFinite) || Math.hypot(...position) < 6_300_000) ||
         view.aboveThresholdSegments.some(segment => segment.positionsM.some(position =>
           !position.every(Number.isFinite) || Math.hypot(...position) < 6_300_000)))
-      throw new Error('Invalid epoch-frozen CPF orbit view.');
+      throw new Error('Invalid frozen CPF orbit view.');
+    for (const segment of view.aboveThresholdSegments) {
+      if (segment.startIsCrossing !== (segment.startCrossingUtc !== null) ||
+          segment.endIsCrossing !== (segment.endCrossingUtc !== null))
+        throw new Error('CPF orbit crossing metadata is inconsistent.');
+    }
   }
   if (value.referenceOrbit) {
     const orbit = value.referenceOrbit;

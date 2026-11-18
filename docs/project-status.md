@@ -48,14 +48,17 @@ The authoritative implementation is the current `master` branch; begin with
   CesiumJS globe. A loopback-only Python bridge connects the shared renderer to
   a persistent C++ worker using the existing CPF acquisition, interpolation and
   ECEF/ENU calculations. This first proof has live markers, catalog selection,
-  observer controls, and a toggleable CPF-derived one-revolution orbit. The C++
-  worker removes nominal Earth rotation and freezes display axes at the current
-  epoch; the renderer uses the corresponding inverse display rotation so paths
-  and live markers remain coincident while Earth, stations, and grid rotate
-  beneath the freely navigable camera. This contextual loop approximates UTC as
-  UT1 because CPF supplies no EOP. Visibility remains based on the original
-  Earth-fixed CPF geometry: the loop is thin grey below threshold and coloured
-  only over C++-classified intervals with refined crossings. `globe --observatory FILE --pri` reuses the
+  observer controls, and toggleable, closed CPF-derived orbit objects frozen at
+  the current reference epoch. The camera moves freely around the stationary
+  orbits while Earth, station, grid, and elevation cone rotate inside them.
+  Nominal Earth rotation is used to estimate the revolution and display frame;
+  UTC approximates UT1 because CPF supplies no EOP. Visibility remains
+  classified from the original Earth-fixed CPF geometry at each sample epoch.
+  Paths retain a muted target colour below threshold and become brighter and
+  thicker over C++-classified intervals. Refined AOS/LOS crossings are outlined
+  points with UTC hover details; they are not presented as intersections with
+  the cone at its current orientation. Live target details also appear on hover
+  instead of persistent labels. `globe --observatory FILE --pri` reuses the
   validated CLI observatory and priority-file parsers for browser startup.
   Persisted observer profiles and scheduled session refresh are not yet ported.
 - Countdown searches return the first rise/set, stopping at actual position

@@ -33,15 +33,20 @@ test('accepts station-classified visibility segments inside the CPF path', () =>
   expect(() => validateSnapshot(value)).toThrow();
 });
 
-test('accepts a CPF-derived one-revolution display orbit', () => {
+test('accepts a closed frozen CPF revolution and rejects incompatible display models', () => {
   const value = structuredClone(snapshot);
   value.trajectory.orbitView = {
-    model: 'cpf-nominal-earth-rotation', referenceEpochUtc: value.epochUtc,
+    model: 'cpf-frozen-closed-orbit', referenceEpochUtc: value.epochUtc,
     estimatedPeriodSeconds: 13_500,
     positionsM: value.referenceOrbit.positionsM,
-    aboveThresholdSegments: [{ positionsM: value.referenceOrbit.positionsM.slice(20, 40) }],
+    aboveThresholdSegments: [{ positionsM: value.referenceOrbit.positionsM.slice(20, 40),
+      startIsCrossing: true, endIsCrossing: true,
+      startCrossingUtc: value.epochUtc, endCrossingUtc: value.trajectory.samples[10].epochUtc }],
   };
   expect(validateSnapshot(value).trajectory.orbitView!.positionsM).toHaveLength(361);
+  value.trajectory.orbitView.model = 'cpf-earth-fixed-trajectory';
+  expect(() => validateSnapshot(value)).toThrow();
+  value.trajectory.orbitView.model = 'cpf-frozen-closed-orbit';
   value.trajectory.orbitView.referenceEpochUtc = '2026-11-16T10:00:00Z';
   expect(() => validateSnapshot(value)).toThrow();
 });
